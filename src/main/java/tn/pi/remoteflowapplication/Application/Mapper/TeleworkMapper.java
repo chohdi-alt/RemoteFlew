@@ -1,4 +1,4 @@
-package tn.pi.remoteflowapplication.Application.Mapper;
+package tn.pi.remoteflowapplication.application.mapper;
 
 public class TeleworkMapper {
 }

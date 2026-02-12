@@ -1,4 +1,4 @@
-package tn.pi.remoteflowapplication.Application.Service;
+package tn.pi.remoteflowapplication.application.service;
 
 public class ScoringApplicationService {
 }

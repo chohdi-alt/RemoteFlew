@@ -1,4 +1,4 @@
-package tn.pi.remoteflowapplication.Domain.ValueObject;
+package tn.pi.remoteflowapplication.domain.valueobject;
 
 public class TeleworkQuota {
 }
