@@ -40,6 +40,9 @@ public class TeleworkRequest extends DemandeTeletravail {
     @Column(name = "alfresco_node_id")
     private String alfrescoNodeId;
 
+    @Column(name = "agreement_node_id")
+    private String agreementNodeId;
+
     @Enumerated(EnumType.STRING)
     @Column(name = "status", nullable = false)
     private RequestStatus status;
@@ -193,6 +196,14 @@ public class TeleworkRequest extends DemandeTeletravail {
 
     public String getAlfrescoNodeId() {
         return alfrescoNodeId;
+    }
+
+    public String getAgreementNodeId() {
+        return agreementNodeId;
+    }
+
+    public void linkAgreementNode(String agreementNodeId) {
+        this.agreementNodeId = agreementNodeId;
     }
 
     public Optional<String> getDecisionComment() {

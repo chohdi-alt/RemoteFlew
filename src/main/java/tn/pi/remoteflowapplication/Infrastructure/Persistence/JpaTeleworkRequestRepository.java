@@ -33,6 +33,11 @@ public class JpaTeleworkRequestRepository implements TeleworkRequestRepository {
     }
 
     @Override
+    public Optional<TeleworkRequest> findByProcessInstanceId(String processInstanceId) {
+        return jpaRepository.findByProcessInstanceId(processInstanceId);
+    }
+
+    @Override
     public List<TeleworkRequest> findByEmployeeId(String employeeId) {
         return jpaRepository.findByEmployeeId(employeeId);
     }

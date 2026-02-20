@@ -69,6 +69,10 @@ public class AuditLog {
         return action;
     }
 
+    public Long getId() {
+        return id;
+    }
+
     public String getEntite() {
         return entite;
     }

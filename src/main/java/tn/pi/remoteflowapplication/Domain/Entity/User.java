@@ -34,6 +34,19 @@ public class User extends Utilisateur {
         return value.isBlank() ? "N/A" : value;
     }
 
+    public void synchronizeProfile(String fullName, String email, boolean active) {
+        setPrenom(extractPrenom(fullName));
+        setNom(extractNom(fullName));
+        if (email != null && !email.isBlank()) {
+            setEmail(email);
+        }
+        setActif(active);
+    }
+
+    public void updateActivation(boolean active) {
+        setActif(active);
+    }
+
     private static String extractPrenom(String fullName) {
         if (fullName == null || fullName.isBlank()) {
             return "Unknown";

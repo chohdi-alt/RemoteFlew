@@ -1,5 +1,7 @@
 package tn.pi.remoteflowapplication.infrastructure.persistence;
 
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Repository;
 import tn.pi.remoteflowapplication.domain.entity.User;
 import tn.pi.remoteflowapplication.application.port.out.UserRepository;
@@ -17,6 +19,11 @@ public class JpaUserRepository implements UserRepository {
     @Override
     public Optional<User> findByExternalId(String externalId) {
         return jpaRepository.findByExternalId(externalId);
+    }
+
+    @Override
+    public Page<User> findAll(Pageable pageable) {
+        return jpaRepository.findAll(pageable);
     }
 
     @Override

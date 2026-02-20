@@ -2,14 +2,28 @@ package tn.pi.remoteflowapplication.infrastructure.workflow;
 
 import io.camunda.zeebe.client.ZeebeClient;
 import io.camunda.zeebe.client.api.response.ProcessInstanceEvent;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.core.ParameterizedTypeReference;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.Pageable;
+import org.springframework.http.HttpEntity;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpMethod;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
+import org.springframework.web.client.RestTemplate;
+import tn.pi.remoteflowapplication.application.dto.WorkflowPendingTaskDTO;
 import tn.pi.remoteflowapplication.application.port.out.WorkflowOrchestrationPort;
 
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
-import java.util.concurrent.ExecutionException;
 
 @Service
 /**
@@ -24,6 +38,16 @@ public class CamundaWorkflowService implements WorkflowOrchestrationPort {
     private static final String TELEWORK_PROCESS_ID = "telework_process";
 
     private final ZeebeClient zeebeClient;
+    private final RestTemplate tasklistRestTemplate = new RestTemplate();
+
+    @Value("${camunda.tasklist.base-url:http://localhost:8086}")
+    private String tasklistBaseUrl;
+
+    @Value("${camunda.tasklist.username:demo}")
+    private String tasklistUsername;
+
+    @Value("${camunda.tasklist.password:demo}")
+    private String tasklistPassword;
 
     public CamundaWorkflowService(ZeebeClient zeebeClient) {
         this.zeebeClient = zeebeClient;
@@ -93,6 +117,90 @@ public class CamundaWorkflowService implements WorkflowOrchestrationPort {
         if (requestId == null) {
             throw new IllegalArgumentException("Missing request id for task validation");
         }
+    }
+
+    @Override
+    public Page<WorkflowPendingTaskDTO> findPendingTasksByCandidateGroup(String candidateGroup, Pageable pageable) {
+        List<Map<String, Object>> tasks = queryTasklist(candidateGroup);
+        int fromIndex = (int) Math.min(pageable.getOffset(), tasks.size());
+        int toIndex = Math.min(fromIndex + pageable.getPageSize(), tasks.size());
+
+        List<WorkflowPendingTaskDTO> content = new ArrayList<>();
+        for (int i = fromIndex; i < toIndex; i++) {
+            Map<String, Object> task = tasks.get(i);
+            content.add(toWorkflowPendingTask(task, candidateGroup));
+        }
+
+        return new PageImpl<>(content, pageable, tasks.size());
+    }
+
+    private List<Map<String, Object>> queryTasklist(String candidateGroup) {
+        String url = tasklistBaseUrl + "/v1/tasks/search";
+
+        Map<String, Object> body = new HashMap<>();
+        body.put("state", "CREATED");
+        body.put("candidateGroup", candidateGroup);
+        body.put("pageSize", 500);
+
+        HttpEntity<Map<String, Object>> request = new HttpEntity<>(body, tasklistHeaders());
+        ResponseEntity<List<Map<String, Object>>> response = tasklistRestTemplate.exchange(
+                url,
+                HttpMethod.POST,
+                request,
+                new ParameterizedTypeReference<>() {
+                });
+        List<Map<String, Object>> tasks = response.getBody();
+        return tasks == null ? List.of() : tasks;
+    }
+
+    private WorkflowPendingTaskDTO toWorkflowPendingTask(Map<String, Object> task, String candidateGroup) {
+        String taskKey = asString(task.get("id"));
+        String processInstanceId = asString(task.get("processInstanceKey"));
+        Long requestId = resolveRequestIdFromTaskVariables(taskKey);
+        return new WorkflowPendingTaskDTO(taskKey, requestId, processInstanceId, candidateGroup);
+    }
+
+    private Long resolveRequestIdFromTaskVariables(String taskKey) {
+        if (taskKey == null || taskKey.isBlank()) {
+            return null;
+        }
+
+        try {
+            String url = tasklistBaseUrl + "/v1/tasks/" + taskKey + "/variables/search";
+            Map<String, Object> body = Map.of("variableNames", List.of("requestId"));
+            HttpEntity<Map<String, Object>> request = new HttpEntity<>(body, tasklistHeaders());
+
+            ResponseEntity<List<Map<String, Object>>> response = tasklistRestTemplate.exchange(
+                    url,
+                    HttpMethod.POST,
+                    request,
+                    new ParameterizedTypeReference<>() {
+                    });
+
+            List<Map<String, Object>> variables = response.getBody();
+            if (variables == null || variables.isEmpty()) {
+                return null;
+            }
+
+            Object value = variables.get(0).get("value");
+            if (value == null) {
+                return null;
+            }
+            return Long.parseLong(String.valueOf(value));
+        } catch (Exception ignored) {
+            return null;
+        }
+    }
+
+    private HttpHeaders tasklistHeaders() {
+        HttpHeaders headers = new HttpHeaders();
+        headers.setBasicAuth(tasklistUsername, tasklistPassword);
+        headers.setContentType(MediaType.APPLICATION_JSON);
+        return headers;
+    }
+
+    private String asString(Object value) {
+        return value == null ? null : String.valueOf(value);
     }
 
     private long parseTaskKey(String taskKey) {

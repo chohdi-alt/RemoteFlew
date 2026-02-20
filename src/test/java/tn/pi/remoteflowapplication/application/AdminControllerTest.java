@@ -2,59 +2,31 @@ package tn.pi.remoteflowapplication.application;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.keycloak.representations.idm.UserRepresentation;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import tn.pi.remoteflowapplication.application.service.AdminUserService;
+import tn.pi.remoteflowapplication.application.service.AuditLogQueryService;
 import tn.pi.remoteflowapplication.controller.AdminController;
-import tn.pi.remoteflowapplication.infrastructure.security.KeycloakAuthService;
-import tn.pi.remoteflowapplication.application.port.out.UserRepository;
 
-import java.util.List;
-import java.util.Optional;
-
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.*;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
 
 @ExtendWith(MockitoExtension.class)
 class AdminControllerTest {
 
     @Mock
-    private KeycloakAuthService keycloakAuthService;
+    private AdminUserService adminUserService;
 
     @Mock
-    private UserRepository userRepository;
+    private AuditLogQueryService auditLogQueryService;
 
     @InjectMocks
     private AdminController adminController;
 
     @Test
-    void syncUsersSavesNewUsers() {
-        UserRepresentation kr = new UserRepresentation();
-        kr.setId("key-1");
-        kr.setFirstName("John");
-        kr.setLastName("Doe");
-        kr.setEmail("john@example.com");
-
-        when(keycloakAuthService.getAllUsers()).thenReturn(List.of(kr));
-        when(userRepository.findByExternalId("key-1")).thenReturn(Optional.empty());
-
+    void syncUsersDelegatesToAdminService() {
         adminController.syncUsersFromKeycloak();
-
-        verify(userRepository).save(any());
-    }
-
-    @Test
-    void syncUsersSkipsExistingUsers() {
-        UserRepresentation kr = new UserRepresentation();
-        kr.setId("key-1");
-
-        when(keycloakAuthService.getAllUsers()).thenReturn(List.of(kr));
-        when(userRepository.findByExternalId("key-1"))
-                .thenReturn(Optional.of(mock(tn.pi.remoteflowapplication.domain.entity.User.class)));
-
-        adminController.syncUsersFromKeycloak();
-
-        verify(userRepository, never()).save(any());
+        verify(adminUserService, times(1)).syncUsersFromKeycloak();
     }
 }
