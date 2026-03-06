@@ -12,4 +12,6 @@ public interface WorkflowOrchestrationPort {
     void validateTaskKeyForRequest(String taskKey, String processInstanceId, Long requestId, String requiredRole);
 
     Page<WorkflowPendingTaskDTO> findPendingTasksByCandidateGroup(String candidateGroup, Pageable pageable);
+
+    long countPendingTasksByCandidateGroup(String candidateGroup);
 }

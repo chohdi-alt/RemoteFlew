@@ -50,8 +50,10 @@ public class TeleworkQueryController {
 
     @GetMapping("/telework/{id}/history")
     @PreAuthorize("hasAnyRole('MANAGER','HR','ADMIN','EMPLOYEE')")
-    public List<tn.pi.remoteflowapplication.application.dto.AuditHistoryDTO> getRequestHistory(@PathVariable Long id) {
-        return queryService.getRequestHistory(id);
+    public List<tn.pi.remoteflowapplication.application.dto.AuditHistoryDTO> getRequestHistory(
+            @PathVariable Long id,
+            Authentication authentication) {
+        return queryService.getRequestHistory(id, authentication);
     }
 
     @GetMapping("/telework/validations/pending")

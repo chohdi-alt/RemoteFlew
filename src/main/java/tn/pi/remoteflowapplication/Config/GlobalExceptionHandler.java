@@ -11,11 +11,20 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.server.ResponseStatusException;
 import tn.pi.remoteflowapplication.application.dto.ApiError;
 import tn.pi.remoteflowapplication.domain.exception.BusinessException;
+import tn.pi.remoteflowapplication.domain.exception.ResourceNotFoundException;
+import tn.pi.remoteflowapplication.domain.exception.ForbiddenOperationException;
+import tn.pi.remoteflowapplication.domain.exception.WorkflowExecutionException;
+import tn.pi.remoteflowapplication.domain.exception.BadRequestException;
+import tn.pi.remoteflowapplication.domain.exception.AuthenticationFailedException;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.time.LocalDateTime;
 
 @RestControllerAdvice
 public class GlobalExceptionHandler {
+
+    private static final Logger logger = LoggerFactory.getLogger(GlobalExceptionHandler.class);
 
     @ExceptionHandler(BusinessException.class)
     public ResponseEntity<ApiError> handleBusinessException(BusinessException ex, HttpServletRequest request) {
@@ -67,14 +76,40 @@ public class GlobalExceptionHandler {
         return buildError(status, "REQUEST_REJECTED", message, request);
     }
 
-    @ExceptionHandler(RuntimeException.class)
-    public ResponseEntity<ApiError> handleRuntimeException(
-            RuntimeException ex,
+    @ExceptionHandler(ResourceNotFoundException.class)
+    public ResponseEntity<ApiError> handleResourceNotFoundException(ResourceNotFoundException ex,
             HttpServletRequest request) {
-        return buildError(
-                HttpStatus.INTERNAL_SERVER_ERROR,
-                "INTERNAL_SERVER_ERROR",
-                "An unexpected technical error occurred. Please contact support.",
+        return buildError(HttpStatus.NOT_FOUND, "NOT_FOUND", ex.getMessage(), request);
+    }
+
+    @ExceptionHandler(ForbiddenOperationException.class)
+    public ResponseEntity<ApiError> handleForbiddenOperationException(ForbiddenOperationException ex,
+            HttpServletRequest request) {
+        return buildError(HttpStatus.FORBIDDEN, "FORBIDDEN", ex.getMessage(), request);
+    }
+
+    @ExceptionHandler(BadRequestException.class)
+    public ResponseEntity<ApiError> handleBadRequestException(BadRequestException ex, HttpServletRequest request) {
+        return buildError(HttpStatus.BAD_REQUEST, "BAD_REQUEST", ex.getMessage(), request);
+    }
+
+    @ExceptionHandler(WorkflowExecutionException.class)
+    public ResponseEntity<ApiError> handleWorkflowExecutionException(WorkflowExecutionException ex,
+            HttpServletRequest request) {
+        return buildError(HttpStatus.BAD_GATEWAY, "BAD_GATEWAY", ex.getMessage(), request);
+    }
+
+    @ExceptionHandler(AuthenticationFailedException.class)
+    public ResponseEntity<ApiError> handleAuthenticationFailedException(AuthenticationFailedException ex,
+            HttpServletRequest request) {
+        return buildError(HttpStatus.UNAUTHORIZED, "AUTHENTICATION_FAILED", ex.getMessage(), request);
+    }
+
+    @ExceptionHandler(jakarta.persistence.OptimisticLockException.class)
+    public ResponseEntity<ApiError> handleOptimisticLockException(
+            jakarta.persistence.OptimisticLockException ex,
+            HttpServletRequest request) {
+        return buildError(HttpStatus.CONFLICT, "CONFLICT", "The resource was modified by another transaction.",
                 request);
     }
 

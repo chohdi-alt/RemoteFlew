@@ -14,6 +14,8 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 
+import java.time.Instant;
+
 @Component
 public class HrApprovalHandler {
 
@@ -50,6 +52,8 @@ public class HrApprovalHandler {
                 requestId,
                 "ROLE_HR");
         request.approve(dto.getComment());
+        request.recordHrDecision(auth.getName(), Instant.now());
+        request.recordApprovedAt(Instant.now());
 
         repository.save(request);
         domainEventPublisher.publishEvents(request);
@@ -83,6 +87,8 @@ public class HrApprovalHandler {
                 requestId,
                 "ROLE_HR");
         request.reject(dto.getComment());
+        request.recordHrDecision(auth.getName(), Instant.now());
+        request.recordRejectedAt(Instant.now());
 
         repository.save(request);
         domainEventPublisher.publishEvents(request);

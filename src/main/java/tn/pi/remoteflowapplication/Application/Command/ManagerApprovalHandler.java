@@ -15,6 +15,8 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 
+import java.time.Instant;
+
 @Component
 public class ManagerApprovalHandler {
 
@@ -60,7 +62,10 @@ public class ManagerApprovalHandler {
             request.markAsSpecial();
         } else {
             request.approve(dto.getComment());
+            request.recordApprovedAt(Instant.now());
         }
+
+        request.recordManagerDecision(auth.getName(), Instant.now());
 
         repository.save(request);
         domainEventPublisher.publishEvents(request);
@@ -95,6 +100,8 @@ public class ManagerApprovalHandler {
                 "ROLE_MANAGER");
 
         request.reject(dto.getComment());
+        request.recordManagerDecision(auth.getName(), Instant.now());
+        request.recordRejectedAt(Instant.now());
 
         repository.save(request);
         domainEventPublisher.publishEvents(request);

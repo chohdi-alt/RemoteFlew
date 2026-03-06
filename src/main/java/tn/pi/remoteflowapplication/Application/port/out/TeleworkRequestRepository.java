@@ -24,4 +24,6 @@ public interface TeleworkRequestRepository {
     List<TeleworkRequest> findAll();
 
     void deleteById(Long id);
+
+    void deleteAll();
 }

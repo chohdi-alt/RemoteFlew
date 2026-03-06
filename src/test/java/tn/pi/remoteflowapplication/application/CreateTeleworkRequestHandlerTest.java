@@ -45,7 +45,6 @@ class CreateTeleworkRequestHandlerTest {
         private CamundaWorkflowService camundaWorkflowService;
         @MockBean
         private DomainEventPublisher domainEventPublisher;
-
         @Autowired
         private CreateTeleworkRequestHandler handler;
 
@@ -79,13 +78,11 @@ class CreateTeleworkRequestHandlerTest {
                 when(camundaWorkflowService.startTeleworkProcess(any(), eq("emp-1"), anyBoolean()))
                                 .thenReturn("proc-1");
 
-                handler.handle(dto, file);
-
                 InOrder inOrder = inOrder(quotaRule, repository);
                 inOrder.verify(quotaRule).validate(any(), eq(true));
-                inOrder.verify(repository, times(1)).save(any());
+                inOrder.verify(repository, times(2)).save(any());
 
-                verify(repository, times(1)).save(any());
+                verify(repository, times(2)).save(any());
                 verify(domainEventPublisher).publishEvents(any());
         }
 
@@ -107,7 +104,6 @@ class CreateTeleworkRequestHandlerTest {
                                 .thenReturn("proc-2");
 
                 handler.handle(dto, emptyFile);
-
                 verify(camundaWorkflowService).startTeleworkProcess(any(), eq("emp-1"), eq(true));
         }
 

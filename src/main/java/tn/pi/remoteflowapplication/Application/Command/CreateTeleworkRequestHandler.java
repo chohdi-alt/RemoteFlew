@@ -48,10 +48,10 @@ public class CreateTeleworkRequestHandler {
     public Long handle(CreateTeleworkDTO dto, MultipartFile justificatif)
             throws IOException {
 
-        // Utilisateur authentifiÃ© (Keycloak)
+        // Utilisateur authentifie (Keycloak)
         Authentication auth = SecurityContextHolder.getContext().getAuthentication();
         if (auth == null || !auth.isAuthenticated()) {
-            throw new BusinessException("Utilisateur non authentifiÃ©");
+            throw new BusinessException("Utilisateur non authentifie");
         }
 
         String externalUserId = auth.getName(); // sub du JWT
@@ -59,19 +59,18 @@ public class CreateTeleworkRequestHandler {
             throw new BusinessException("Vous ne pouvez soumettre que vos propres demandes");
         }
 
-        // CrÃ©ation de la demande (SUBMITTED)
+        // Creation de la demande (SUBMITTED)
         TeleworkRequest request = TeleworkRequest.create(
                 externalUserId,
                 dto.getStartDate(),
                 dto.getEndDate());
-
-        // Validation mÃ©tier (quota)
+        // Validation metier (quota)
         boolean hasJustificatif = justificatif != null && !justificatif.isEmpty();
 
         // Validation quota
         quotaRule.validate(request, hasJustificatif);
 
-        // Cas spÃ©cial ?
+        // Cas special ?
         boolean specialCase = quotaRule.isSpecialCase(request);
 
         if (specialCase) {
@@ -95,15 +94,15 @@ public class CreateTeleworkRequestHandler {
         TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
             @Override
             public void afterCommit() {
-                camundaWorkflowService.startTeleworkProcess(
-                        request.getId(),
-                        externalUserId,
-                        specialCase);
-                /*
-                 * In a real production scenario, we'd update the processInstanceId back
-                 * asynchronously or via a callback to keep the entity fully updated.
-                 * For remediation, we prioritize the "DB-First" durability.
-                 */
+                try {
+                    camundaWorkflowService.startTeleworkProcess(
+                            request.getId(),
+                            externalUserId,
+                            specialCase);
+                } catch (Exception e) {
+                    // Log error or handle retry logic here if necessary
+                    // Note: We cannot throw from afterCommit to rollback
+                }
             }
         });
 

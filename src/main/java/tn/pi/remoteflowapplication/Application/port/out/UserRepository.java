@@ -8,6 +8,8 @@ import java.util.Optional;
 public interface UserRepository {
     Optional<User> findByExternalId(String externalId);
 
+    Optional<Long> findTeamIdByExternalId(String externalId);
+
     Page<User> findAll(Pageable pageable);
 
     User save(User user);

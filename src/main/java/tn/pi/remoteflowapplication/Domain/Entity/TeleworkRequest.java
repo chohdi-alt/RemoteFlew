@@ -7,6 +7,7 @@ import jakarta.persistence.Enumerated;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
+import jakarta.persistence.Index;
 import jakarta.persistence.Table;
 import jakarta.persistence.Transient;
 import tn.pi.remoteflowapplication.domain.event.DomainEvent;
@@ -15,13 +16,22 @@ import tn.pi.remoteflowapplication.domain.event.TeleworkRequestRejectedEvent;
 import tn.pi.remoteflowapplication.domain.event.TeleworkRequestSubmittedEvent;
 import tn.pi.remoteflowapplication.domain.state.RequestStatus;
 
+import java.time.Instant;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 
 @Entity
-@Table(name = "telework_requests")
+@Table(name = "telework_requests", indexes = {
+        @Index(name = "idx_telework_employee_id", columnList = "employee_id"),
+        @Index(name = "idx_telework_status", columnList = "status"),
+        @Index(name = "idx_telework_created_at", columnList = "created_at"),
+        @Index(name = "idx_telework_manager_external_id", columnList = "manager_external_id"),
+        @Index(name = "idx_telework_hr_external_id", columnList = "hr_external_id"),
+        @Index(name = "idx_telework_team_id", columnList = "team_id"),
+        @Index(name = "idx_telework_process_instance_id", columnList = "process_instance_id")
+})
 public class TeleworkRequest extends DemandeTeletravail {
 
     @Id
@@ -53,6 +63,30 @@ public class TeleworkRequest extends DemandeTeletravail {
     @Column(name = "process_instance_id")
     private String processInstanceId;
 
+    @Column(name = "submitted_at", nullable = false)
+    private Instant submittedAt;
+
+    @Column(name = "manager_decision_at")
+    private Instant managerDecisionAt;
+
+    @Column(name = "hr_decision_at")
+    private Instant hrDecisionAt;
+
+    @Column(name = "approved_at")
+    private Instant approvedAt;
+
+    @Column(name = "rejected_at")
+    private Instant rejectedAt;
+
+    @Column(name = "manager_external_id")
+    private String managerExternalId;
+
+    @Column(name = "hr_external_id")
+    private String hrExternalId;
+
+    @Column(name = "team_id")
+    private Long teamId;
+
     @Transient
     private final List<DomainEvent> domainEvents = new ArrayList<>();
 
@@ -70,6 +104,7 @@ public class TeleworkRequest extends DemandeTeletravail {
         this.startDate = startDate;
         this.endDate = endDate;
         this.status = RequestStatus.SUBMITTED;
+        this.submittedAt = Instant.now();
         initDemandeMetadata(employeeId, startDate, endDate);
         soumettreDemande();
         // REMOVED: Immediate event registration to avoid null ID. Fixes Defect 2.
@@ -143,6 +178,29 @@ public class TeleworkRequest extends DemandeTeletravail {
 
     public void markAsSpecial() {
         this.status = RequestStatus.SPECIAL;
+        this.managerDecisionAt = Instant.now();
+    }
+
+    public void recordManagerDecision(String managerId, Instant decisionAt) {
+        this.managerExternalId = managerId;
+        this.managerDecisionAt = decisionAt == null ? Instant.now() : decisionAt;
+    }
+
+    public void recordHrDecision(String hrId, Instant decisionAt) {
+        this.hrExternalId = hrId;
+        this.hrDecisionAt = decisionAt == null ? Instant.now() : decisionAt;
+    }
+
+    public void recordApprovedAt(Instant value) {
+        this.approvedAt = value == null ? Instant.now() : value;
+    }
+
+    public void recordRejectedAt(Instant value) {
+        this.rejectedAt = value == null ? Instant.now() : value;
+    }
+
+    public void assignTeamId(Long value) {
+        this.teamId = value;
     }
 
     @Override
@@ -212,5 +270,37 @@ public class TeleworkRequest extends DemandeTeletravail {
 
     public String getProcessInstanceId() {
         return processInstanceId;
+    }
+
+    public Instant getSubmittedAt() {
+        return submittedAt;
+    }
+
+    public Instant getManagerDecisionAt() {
+        return managerDecisionAt;
+    }
+
+    public Instant getHrDecisionAt() {
+        return hrDecisionAt;
+    }
+
+    public Instant getApprovedAt() {
+        return approvedAt;
+    }
+
+    public Instant getRejectedAt() {
+        return rejectedAt;
+    }
+
+    public String getManagerExternalId() {
+        return managerExternalId;
+    }
+
+    public String getHrExternalId() {
+        return hrExternalId;
+    }
+
+    public Long getTeamId() {
+        return teamId;
     }
 }

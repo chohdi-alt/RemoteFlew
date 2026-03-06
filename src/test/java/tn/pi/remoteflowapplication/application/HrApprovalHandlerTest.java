@@ -21,6 +21,7 @@ import java.util.List;
 import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -60,6 +61,9 @@ class HrApprovalHandlerTest {
                 handler.approve(1L, "200", new ApprovalDecisionDTO(1L, "hr-1", "ok"));
 
                 assertEquals("APPROVED", request.getStatus().name());
+                assertNotNull(request.getHrDecisionAt());
+                assertNotNull(request.getApprovedAt());
+                assertEquals("hr-1", request.getHrExternalId());
                 verify(repository).save(request);
                 verify(domainEventPublisher).publishEvents(request);
         }
@@ -80,6 +84,9 @@ class HrApprovalHandlerTest {
                 handler.reject(1L, "201", new ApprovalDecisionDTO(1L, "hr-1", "no"));
 
                 assertEquals("REJECTED", request.getStatus().name());
+                assertNotNull(request.getHrDecisionAt());
+                assertNotNull(request.getRejectedAt());
+                assertEquals("hr-1", request.getHrExternalId());
                 verify(repository).save(request);
                 verify(domainEventPublisher).publishEvents(request);
         }

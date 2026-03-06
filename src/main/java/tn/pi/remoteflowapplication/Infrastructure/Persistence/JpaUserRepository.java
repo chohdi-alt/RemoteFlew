@@ -22,6 +22,11 @@ public class JpaUserRepository implements UserRepository {
     }
 
     @Override
+    public Optional<Long> findTeamIdByExternalId(String externalId) {
+        return jpaRepository.findTeamIdByExternalId(externalId);
+    }
+
+    @Override
     public Page<User> findAll(Pageable pageable) {
         return jpaRepository.findAll(pageable);
     }
