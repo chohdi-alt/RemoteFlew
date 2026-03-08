@@ -45,6 +45,10 @@ public class HrApprovalHandler {
             throw new BusinessException("Request not ready for HR approval");
         }
 
+        if (request.getProcessInstanceId() == null || request.getProcessInstanceId().isBlank()) {
+            throw new BusinessException("Cannot approve a request before the workflow process has started.");
+        }
+
         // Validate taskKey correlation before mutating state or moving documents.
         camundaWorkflowService.validateTaskKeyForRequest(
                 taskKey,
@@ -78,6 +82,10 @@ public class HrApprovalHandler {
 
         if (request.getStatus() != RequestStatus.SPECIAL) {
             throw new BusinessException("Request not ready for HR approval");
+        }
+
+        if (request.getProcessInstanceId() == null || request.getProcessInstanceId().isBlank()) {
+            throw new BusinessException("Cannot reject a request before the workflow process has started.");
         }
 
         // Validate taskKey correlation before mutating state or moving documents.

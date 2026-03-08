@@ -51,6 +51,10 @@ public class ManagerApprovalHandler {
 
         final boolean specialCase = quotaValidationRule.isSpecialCase(request);
 
+        if (request.getProcessInstanceId() == null || request.getProcessInstanceId().isBlank()) {
+            throw new BusinessException("Cannot approve a request before the workflow process has started.");
+        }
+
         // Validate taskKey correlation (stateless).
         camundaWorkflowService.validateTaskKeyForRequest(
                 taskKey,
@@ -90,6 +94,10 @@ public class ManagerApprovalHandler {
 
         if (request.getStatus() != RequestStatus.SUBMITTED) {
             throw new BusinessException("Request not ready for manager approval");
+        }
+
+        if (request.getProcessInstanceId() == null || request.getProcessInstanceId().isBlank()) {
+            throw new BusinessException("Cannot reject a request before the workflow process has started.");
         }
 
         // Validate taskKey correlation before mutating state or moving documents.

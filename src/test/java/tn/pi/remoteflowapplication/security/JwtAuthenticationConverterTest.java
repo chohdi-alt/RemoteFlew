@@ -78,6 +78,23 @@ public class JwtAuthenticationConverterTest {
         assertThat(token.getAuthorities()).isEmpty();
     }
 
+    @Test
+    void shouldUsePreferredUsernameAsPrincipalName() throws Exception {
+        Converter<Jwt, AbstractAuthenticationToken> converter = extractConverter();
+
+        Jwt jwt = Jwt.withTokenValue("token")
+                .header("alg", "none")
+                .claim("sub", "8c4af0fa-9f75-4a0c-8a34-86dbc4dbf3fd")
+                .claim("preferred_username", "employee-1")
+                .claim("realm_access", Map.of("roles", List.of("EMPLOYEE")))
+                .build();
+
+        AbstractAuthenticationToken token = converter.convert(jwt);
+
+        assertThat(token).isNotNull();
+        assertThat(token.getName()).isEqualTo("employee-1");
+    }
+
     @SuppressWarnings("unchecked")
     private Converter<Jwt, AbstractAuthenticationToken> extractConverter() throws Exception {
         SecurityConfig config = new SecurityConfig();

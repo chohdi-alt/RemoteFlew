@@ -14,6 +14,7 @@ import org.springframework.web.bind.annotation.RestController;
 import tn.pi.remoteflowapplication.application.dto.AuthTokenResponse;
 import tn.pi.remoteflowapplication.application.dto.LoginRequest;
 import tn.pi.remoteflowapplication.application.dto.RefreshRequest;
+import tn.pi.remoteflowapplication.domain.exception.AuthenticationFailedException;
 import tn.pi.remoteflowapplication.infrastructure.security.KeycloakTokenService;
 
 import java.util.HashMap;
@@ -36,15 +37,35 @@ public class AuthController {
 
     @PostMapping("/login")
     public AuthTokenResponse login(@Valid @RequestBody LoginRequest request) {
-        logger.info("auth.login.attempt username={}", request.getUsername());
-        AuthTokenResponse token = keycloakTokenService.login(request.getUsername(), request.getPassword());
-        logger.info("auth.login.success username={} roles={}", request.getUsername(), token.getRoles());
-        return token;
+        logger.info("event=AUTH_LOGIN_ATTEMPT username={}", request.getUsername());
+        try {
+            AuthTokenResponse token = keycloakTokenService.login(request.getUsername(), request.getPassword());
+            logger.info("event=AUTH_LOGIN_SUCCESS username={} roleCount={}",
+                    request.getUsername(),
+                    token.getRoles() == null ? 0 : token.getRoles().size());
+            return token;
+        } catch (AuthenticationFailedException ex) {
+            logger.warn("event=AUTH_LOGIN_FAILURE username={} errorCode={} message={}",
+                    request.getUsername(),
+                    ex.getErrorCode(),
+                    ex.getMessage());
+            throw ex;
+        }
     }
 
     @PostMapping("/refresh")
     public AuthTokenResponse refresh(@Valid @RequestBody RefreshRequest request) {
-        return keycloakTokenService.refresh(request.getRefreshToken());
+        logger.info("event=TOKEN_REFRESH_ATTEMPT hasRefreshToken={}",
+                request.getRefreshToken() != null && !request.getRefreshToken().isBlank());
+        try {
+            AuthTokenResponse token = keycloakTokenService.refresh(request.getRefreshToken());
+            logger.info("event=TOKEN_REFRESH_SUCCESS roleCount={}",
+                    token.getRoles() == null ? 0 : token.getRoles().size());
+            return token;
+        } catch (AuthenticationFailedException ex) {
+            logger.warn("event=TOKEN_REFRESH_FAILURE errorCode={} message={}", ex.getErrorCode(), ex.getMessage());
+            throw ex;
+        }
     }
 
     @GetMapping("/me")

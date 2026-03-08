@@ -5,6 +5,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import tn.pi.remoteflowapplication.application.service.SystemConfigurationService;
 import tn.pi.remoteflowapplication.domain.entity.TeleworkRequest;
 import tn.pi.remoteflowapplication.domain.exception.BusinessException;
 import tn.pi.remoteflowapplication.domain.rule.QuotaValidationRule;
@@ -25,11 +26,15 @@ class QuotaValidationRuleTest {
         @Mock
         private TeleworkRequestRepository repository;
 
+        @Mock
+        private SystemConfigurationService systemConfigurationService;
+
         private QuotaValidationRule rule;
 
         @BeforeEach
         void setUp() {
-                rule = new QuotaValidationRule(repository);
+                when(systemConfigurationService.getTeleworkMaxDaysPerWeek()).thenReturn(1);
+                rule = new QuotaValidationRule(repository, systemConfigurationService);
         }
 
         @Test

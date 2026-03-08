@@ -122,19 +122,24 @@ public class KeycloakTokenService {
                 FailureAnalysis analysis = analyzeKeycloakFailure(keycloakError, responseBody);
 
                 logger.warn(
-                        "keycloak.token.rejected id={} grant_type={} username={} status={} error={} error_description={} classification={} recommended_action={} raw_body={}",
+                        "event=AUTH_LOGIN_FAILURE keycloak.token.rejected requestId={} clientId={} username={} grantType={} status={} error={} description={} classification={} recommendedAction={}",
                         requestId,
-                        grantType,
+                        clientId,
                         username,
+                        grantType,
                         status,
                         keycloakError.error,
                         keycloakError.errorDescription,
                         analysis.classification,
-                        analysis.recommendedAction,
-                        responseBody);
+                        analysis.recommendedAction);
+                logger.debug("keycloak.token.rejected.rawBody requestId={} body={}", requestId, responseBody);
 
-                String friendlyMessage = buildFriendlyAuthFailureMessage(keycloakError, responseBody, analysis);
-                throw new AuthenticationFailedException(friendlyMessage);
+                throw new AuthenticationFailedException(
+                        "Invalid credentials or Keycloak rejected password grant",
+                        "AUTHENTICATION_FAILED",
+                        keycloakError.error,
+                        keycloakError.errorDescription,
+                        status);
             }
 
             if (response.status.is5xxServerError()) {

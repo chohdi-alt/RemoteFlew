@@ -9,10 +9,13 @@ import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.web.bind.annotation.*;
 import tn.pi.remoteflowapplication.application.dto.AdminUserDTO;
 import tn.pi.remoteflowapplication.application.dto.AuditLogDTO;
+import tn.pi.remoteflowapplication.application.dto.TeleworkQuotaConfigRequest;
+import tn.pi.remoteflowapplication.application.dto.TeleworkQuotaConfigResponse;
 import tn.pi.remoteflowapplication.application.dto.UpdateUserActivationRequest;
 import tn.pi.remoteflowapplication.application.dto.UpdateUserRolesRequest;
 import tn.pi.remoteflowapplication.application.service.AdminUserService;
 import tn.pi.remoteflowapplication.application.service.AuditLogQueryService;
+import tn.pi.remoteflowapplication.application.service.SystemConfigurationService;
 
 import java.time.LocalDateTime;
 
@@ -23,12 +26,15 @@ public class AdminController {
 
     private final AdminUserService adminUserService;
     private final AuditLogQueryService auditLogQueryService;
+    private final SystemConfigurationService systemConfigurationService;
 
     public AdminController(
             AdminUserService adminUserService,
-            AuditLogQueryService auditLogQueryService) {
+            AuditLogQueryService auditLogQueryService,
+            SystemConfigurationService systemConfigurationService) {
         this.adminUserService = adminUserService;
         this.auditLogQueryService = auditLogQueryService;
+        this.systemConfigurationService = systemConfigurationService;
     }
 
     @GetMapping("/users")
@@ -73,5 +79,11 @@ public class AdminController {
     @PostMapping("/workflow/redeploy")
     public void redeployWorkflow() {
         // future: Camunda redeploy
+    }
+
+    @PutMapping("/config/telework-quota")
+    public TeleworkQuotaConfigResponse updateTeleworkQuota(@RequestBody @Valid TeleworkQuotaConfigRequest request) {
+        int maxDaysPerWeek = systemConfigurationService.updateTeleworkMaxDaysPerWeek(request.maxDaysPerWeek());
+        return new TeleworkQuotaConfigResponse(maxDaysPerWeek);
     }
 }

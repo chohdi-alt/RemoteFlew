@@ -1,5 +1,6 @@
 package tn.pi.remoteflowapplication.config;
 
+import jakarta.validation.ConstraintViolationException;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.HttpStatusCode;
@@ -18,8 +19,10 @@ import tn.pi.remoteflowapplication.domain.exception.BadRequestException;
 import tn.pi.remoteflowapplication.domain.exception.AuthenticationFailedException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.dao.DataIntegrityViolationException;
 
 import java.time.LocalDateTime;
+import java.util.List;
 
 @RestControllerAdvice
 public class GlobalExceptionHandler {
@@ -53,14 +56,29 @@ public class GlobalExceptionHandler {
     }
 
     @ExceptionHandler(org.springframework.web.bind.MethodArgumentNotValidException.class)
-    public ResponseEntity<ApiError> handleValidationExceptions(
+    public ResponseEntity<ValidationErrorResponse> handleValidationExceptions(
             org.springframework.web.bind.MethodArgumentNotValidException ex,
             HttpServletRequest request) {
-        String details = ex.getBindingResult().getFieldErrors().stream()
-                .map(error -> error.getField() + ": " + error.getDefaultMessage())
-                .reduce((a, b) -> a + "; " + b)
-                .orElse("Validation failed");
-        return buildError(HttpStatus.BAD_REQUEST, "VALIDATION_FAILED", details, request);
+        List<ValidationFieldError> fields = ex.getBindingResult().getFieldErrors().stream()
+                .map(error -> new ValidationFieldError(
+                        error.getField(),
+                        error.getDefaultMessage() == null ? "Invalid value" : error.getDefaultMessage()))
+                .toList();
+
+        return ResponseEntity.badRequest().body(buildValidationError("Request validation failed", fields, request));
+    }
+
+    @ExceptionHandler(ConstraintViolationException.class)
+    public ResponseEntity<ValidationErrorResponse> handleConstraintViolationException(
+            ConstraintViolationException ex,
+            HttpServletRequest request) {
+        List<ValidationFieldError> fields = ex.getConstraintViolations().stream()
+                .map(violation -> new ValidationFieldError(
+                        violation.getPropertyPath() == null ? "unknown" : violation.getPropertyPath().toString(),
+                        violation.getMessage()))
+                .toList();
+
+        return ResponseEntity.badRequest().body(buildValidationError("Request validation failed", fields, request));
     }
 
     @ExceptionHandler(ResponseStatusException.class)
@@ -102,7 +120,31 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(AuthenticationFailedException.class)
     public ResponseEntity<ApiError> handleAuthenticationFailedException(AuthenticationFailedException ex,
             HttpServletRequest request) {
-        return buildError(HttpStatus.UNAUTHORIZED, "AUTHENTICATION_FAILED", ex.getMessage(), request);
+        logger.warn(
+                "event=AUTH_LOGIN_FAILURE path={} errorCode={} keycloakError={} keycloakStatus={} message={}",
+                request == null ? null : request.getRequestURI(),
+                ex.getErrorCode(),
+                ex.getKeycloakError(),
+                ex.getKeycloakStatus(),
+                ex.getMessage());
+
+        String message = ex.getMessage() == null || ex.getMessage().isBlank()
+                ? "Invalid credentials or Keycloak rejected password grant"
+                : ex.getMessage();
+
+        return buildError(HttpStatus.UNAUTHORIZED, ex.getErrorCode(), message, request);
+    }
+
+    @ExceptionHandler(DataIntegrityViolationException.class)
+    public ResponseEntity<ApiError> handleDatabaseError(
+            DataIntegrityViolationException ex,
+            HttpServletRequest request) {
+
+        return buildError(
+                HttpStatus.BAD_REQUEST,
+                "DATABASE_CONSTRAINT",
+                "Database constraint violation",
+                request);
     }
 
     @ExceptionHandler(jakarta.persistence.OptimisticLockException.class)
@@ -125,5 +167,28 @@ public class GlobalExceptionHandler {
                 message,
                 request == null ? null : request.getRequestURI());
         return ResponseEntity.status(status).body(error);
+    }
+
+    private ValidationErrorResponse buildValidationError(
+            String message,
+            List<ValidationFieldError> fields,
+            HttpServletRequest request) {
+        return new ValidationErrorResponse(
+                LocalDateTime.now(),
+                "VALIDATION_ERROR",
+                message,
+                request == null ? null : request.getRequestURI(),
+                fields);
+    }
+
+    public record ValidationFieldError(String field, String message) {
+    }
+
+    public record ValidationErrorResponse(
+            LocalDateTime timestamp,
+            String error,
+            String message,
+            String path,
+            List<ValidationFieldError> fields) {
     }
 }

@@ -1,12 +1,23 @@
 package tn.pi.remoteflowapplication.application.dto;
 
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Size;
+
 import java.time.LocalDate;
 
 public class CreateTeleworkDTO {
 
+    @NotBlank(message = "employeeId must not be blank")
     private String employeeId;
+
+    @NotNull(message = "startDate must not be null")
     private LocalDate startDate;
+
+    @NotNull(message = "endDate must not be null")
     private LocalDate endDate;
+
+    @Size(max = 500, message = "reason must not exceed 500 characters")
     private String reason;
 
     public CreateTeleworkDTO() {

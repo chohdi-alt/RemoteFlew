@@ -185,6 +185,9 @@ public class AlfrescoDocumentService implements DocumentStoragePort {
     }
 
     public void move(String nodeId, String targetFolderId) {
+        if (nodeId == null || nodeId.isBlank()) {
+            return;
+        }
         String normalizedNodeId = normalizeNodeId(nodeId);
         String normalizedTargetFolderId = normalizeNodeId(targetFolderId);
         String url = baseUrl + "/api/-default-/public/alfresco/versions/1/nodes/" + normalizedNodeId;

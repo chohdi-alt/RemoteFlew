@@ -1,6 +1,8 @@
 package tn.pi.remoteflowapplication.controller;
 
 import jakarta.validation.Valid;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
@@ -10,9 +12,13 @@ import tn.pi.remoteflowapplication.application.command.ManagerApprovalHandler;
 import tn.pi.remoteflowapplication.application.dto.ApprovalDecisionDTO;
 import tn.pi.remoteflowapplication.application.dto.CreateTeleworkDTO;
 
+import java.util.Objects;
+
 @RestController
 @RequestMapping("/api/telework")
 public class TeleworkCommandController {
+
+    private static final Logger logger = LoggerFactory.getLogger(TeleworkCommandController.class);
 
     private final CreateTeleworkRequestHandler createHandler;
     private final ManagerApprovalHandler managerApprovalHandler;
@@ -33,11 +39,19 @@ public class TeleworkCommandController {
             @RequestPart("data") @Valid CreateTeleworkDTO dto,
             @RequestPart("file") MultipartFile file,
             java.security.Principal principal) throws java.io.IOException {
-        if (!dto.getEmployeeId().equals(principal.getName())) {
+        String principalName = principal == null ? null : principal.getName();
+        logger.info("event=TELEWORK_CREATE_ATTEMPT principal={} employeeId={} hasFile={}",
+                principalName, dto.getEmployeeId(), file != null && !file.isEmpty());
+
+        if (!Objects.equals(dto.getEmployeeId(), principalName)) {
+            logger.warn("event=UNAUTHORIZED_ACCESS path=/api/telework principal={} employeeId={}",
+                    principalName, dto.getEmployeeId());
             throw new org.springframework.web.server.ResponseStatusException(
                     org.springframework.http.HttpStatus.FORBIDDEN, "You cannot submit requests for others.");
         }
+
         createHandler.handle(dto, file);
+        logger.info("event=TELEWORK_CREATE_SUCCESS principal={} employeeId={}", principalName, dto.getEmployeeId());
     }
 
     @PostMapping("/{id}/manager/approve")

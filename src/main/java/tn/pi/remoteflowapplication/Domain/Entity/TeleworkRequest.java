@@ -25,7 +25,7 @@ import java.util.Optional;
 @Entity
 @Table(name = "telework_requests", indexes = {
         @Index(name = "idx_telework_employee_id", columnList = "employee_id"),
-        @Index(name = "idx_telework_status", columnList = "status"),
+        @Index(name = "idx_telework_state", columnList = "state"),
         @Index(name = "idx_telework_created_at", columnList = "created_at"),
         @Index(name = "idx_telework_manager_external_id", columnList = "manager_external_id"),
         @Index(name = "idx_telework_hr_external_id", columnList = "hr_external_id"),
@@ -54,7 +54,7 @@ public class TeleworkRequest extends DemandeTeletravail {
     private String agreementNodeId;
 
     @Enumerated(EnumType.STRING)
-    @Column(name = "status", nullable = false)
+    @Column(name = "state", nullable = false, columnDefinition = "ENUM('SUBMITTED', 'APPROVED', 'REJECTED', 'SPECIAL')")
     private RequestStatus status;
 
     @Column(name = "decision_comment")

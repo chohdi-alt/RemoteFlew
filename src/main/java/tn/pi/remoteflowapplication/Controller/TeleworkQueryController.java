@@ -11,9 +11,11 @@ import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 import tn.pi.remoteflowapplication.application.dto.AgreementFileDTO;
 import tn.pi.remoteflowapplication.application.dto.PendingValidationTaskDTO;
+import tn.pi.remoteflowapplication.application.dto.TeleworkQuotaResponse;
 import tn.pi.remoteflowapplication.application.dto.TeleworkStatusDTO;
 import tn.pi.remoteflowapplication.application.query.TeleworkStatusQueryService;
 import tn.pi.remoteflowapplication.application.service.AgreementService;
+import tn.pi.remoteflowapplication.application.service.TeleworkQuotaService;
 import tn.pi.remoteflowapplication.application.service.ValidationInboxService;
 
 import java.util.List;
@@ -25,14 +27,23 @@ public class TeleworkQueryController {
     private final TeleworkStatusQueryService queryService;
     private final ValidationInboxService validationInboxService;
     private final AgreementService agreementService;
+    private final TeleworkQuotaService teleworkQuotaService;
 
     public TeleworkQueryController(
             TeleworkStatusQueryService queryService,
             ValidationInboxService validationInboxService,
-            AgreementService agreementService) {
+            AgreementService agreementService,
+            TeleworkQuotaService teleworkQuotaService) {
         this.queryService = queryService;
         this.validationInboxService = validationInboxService;
         this.agreementService = agreementService;
+        this.teleworkQuotaService = teleworkQuotaService;
+    }
+
+    @GetMapping("/telework/quota")
+    @PreAuthorize("hasRole('EMPLOYEE')")
+    public TeleworkQuotaResponse getCurrentQuota(Authentication auth) {
+        return teleworkQuotaService.getCurrentWeekQuota(auth.getName());
     }
 
     // Manager / HR / Admin: view request details
