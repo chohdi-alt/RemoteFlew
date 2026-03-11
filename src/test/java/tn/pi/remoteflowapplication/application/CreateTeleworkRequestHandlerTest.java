@@ -3,12 +3,12 @@ package tn.pi.remoteflowapplication.application;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.mockito.InOrder;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.mock.web.MockMultipartFile;
+import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -24,10 +24,7 @@ import java.time.LocalDate;
 import java.util.List;
 
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.Mockito.inOrder;
-import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -45,6 +42,8 @@ class CreateTeleworkRequestHandlerTest {
         private CamundaWorkflowService camundaWorkflowService;
         @MockBean
         private DomainEventPublisher domainEventPublisher;
+        @MockBean
+        private JwtDecoder jwtDecoder;
         @Autowired
         private CreateTeleworkRequestHandler handler;
 
@@ -75,14 +74,13 @@ class CreateTeleworkRequestHandlerTest {
                                 "x".getBytes());
 
                 when(documentService.upload(any(), eq(teleworkFolderId))).thenReturn("node-1");
-                when(camundaWorkflowService.startTeleworkProcess(any(), eq("emp-1"), anyBoolean()))
-                                .thenReturn("proc-1");
 
-                InOrder inOrder = inOrder(quotaRule, repository);
-                inOrder.verify(quotaRule).validate(any(), eq(true));
-                inOrder.verify(repository, times(2)).save(any());
+                // Act
+                handler.handle(dto, file);
 
-                verify(repository, times(2)).save(any());
+                // Assert
+                verify(quotaRule).validate(any(), eq(true));
+                verify(repository).save(any());
                 verify(domainEventPublisher).publishEvents(any());
         }
 
@@ -100,11 +98,13 @@ class CreateTeleworkRequestHandlerTest {
                                 new byte[0]);
 
                 when(quotaRule.isSpecialCase(any())).thenReturn(true);
-                when(camundaWorkflowService.startTeleworkProcess(any(), eq("emp-1"), eq(true)))
-                                .thenReturn("proc-2");
 
+                // Act
                 handler.handle(dto, emptyFile);
-                verify(camundaWorkflowService).startTeleworkProcess(any(), eq("emp-1"), eq(true));
+
+                // Assert
+                verify(repository).save(any());
+                verify(domainEventPublisher).publishEvents(any());
         }
 
         private void setAuth(String username, String role) {

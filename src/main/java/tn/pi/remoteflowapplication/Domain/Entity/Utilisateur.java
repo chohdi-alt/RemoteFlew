@@ -21,7 +21,7 @@ public abstract class Utilisateur extends AuditedEntity {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(nullable = false)
+    @Column(nullable = true)
     private String email;
 
     @Column(name = "nom")

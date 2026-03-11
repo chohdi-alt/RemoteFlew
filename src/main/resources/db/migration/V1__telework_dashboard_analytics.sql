@@ -1,12 +1,11 @@
-ALTER TABLE telework_requests
-    ADD COLUMN submitted_at TIMESTAMP NULL,
-    ADD COLUMN manager_decision_at TIMESTAMP NULL,
-    ADD COLUMN hr_decision_at TIMESTAMP NULL,
-    ADD COLUMN approved_at TIMESTAMP NULL,
-    ADD COLUMN rejected_at TIMESTAMP NULL,
-    ADD COLUMN manager_external_id VARCHAR(255) NULL,
-    ADD COLUMN hr_external_id VARCHAR(255) NULL,
-    ADD COLUMN team_id BIGINT NULL;
+ALTER TABLE telework_requests ADD COLUMN submitted_at TIMESTAMP NULL;
+ALTER TABLE telework_requests ADD COLUMN manager_decision_at TIMESTAMP NULL;
+ALTER TABLE telework_requests ADD COLUMN hr_decision_at TIMESTAMP NULL;
+ALTER TABLE telework_requests ADD COLUMN approved_at TIMESTAMP NULL;
+ALTER TABLE telework_requests ADD COLUMN rejected_at TIMESTAMP NULL;
+ALTER TABLE telework_requests ADD COLUMN manager_external_id VARCHAR(255) NULL;
+ALTER TABLE telework_requests ADD COLUMN hr_external_id VARCHAR(255) NULL;
+ALTER TABLE telework_requests ADD COLUMN team_id BIGINT NULL;
 
 UPDATE telework_requests
 SET submitted_at = COALESCE(submitted_at, created_at, CURRENT_TIMESTAMP());

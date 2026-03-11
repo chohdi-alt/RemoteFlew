@@ -12,5 +12,11 @@ public interface UserRepository {
 
     Page<User> findAll(Pageable pageable);
 
+    java.util.List<User> findAll();
+
+    java.util.List<User> findByRoles_Name(String roleName);
+
+    java.util.List<User> findByEquipe_Id(Long teamId);
+
     User save(User user);
 }

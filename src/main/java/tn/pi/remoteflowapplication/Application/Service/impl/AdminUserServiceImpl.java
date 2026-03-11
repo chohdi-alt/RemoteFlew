@@ -4,6 +4,7 @@ import org.keycloak.representations.idm.UserRepresentation;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
+import org.springframework.security.access.prepost.PreAuthorize;
 import tn.pi.remoteflowapplication.application.dto.AdminUserDTO;
 import tn.pi.remoteflowapplication.application.port.out.UserRepository;
 import tn.pi.remoteflowapplication.application.service.AdminUserService;
@@ -21,12 +22,15 @@ public class AdminUserServiceImpl implements AdminUserService {
 
     private final KeycloakAuthService keycloakAuthService;
     private final UserRepository userRepository;
+    private final tn.pi.remoteflowapplication.application.service.TeamService teamService;
 
     public AdminUserServiceImpl(
             KeycloakAuthService keycloakAuthService,
-            UserRepository userRepository) {
+            UserRepository userRepository,
+            tn.pi.remoteflowapplication.application.service.TeamService teamService) {
         this.keycloakAuthService = keycloakAuthService;
         this.userRepository = userRepository;
+        this.teamService = teamService;
     }
 
     @Override
@@ -59,22 +63,52 @@ public class AdminUserServiceImpl implements AdminUserService {
     }
 
     @Override
+    @PreAuthorize("hasRole('ADMIN')")
+    public User createUser(String username, String email, String firstName, String lastName, String password,
+            Set<String> roles) {
+        String keycloakUserId = keycloakAuthService.createUser(username, email, firstName, lastName);
+
+        keycloakAuthService.resetPassword(keycloakUserId, password);
+        keycloakAuthService.setRealmRoles(keycloakUserId, roles);
+
+        User newUser = new User(keycloakUserId, email, lastName, firstName, username, true);
+        return userRepository.save(newUser);
+    }
+
+    @Override
+    @PreAuthorize("hasRole('ADMIN')")
+    public void assignRole(String externalId, Set<String> roles) {
+        keycloakAuthService.setRealmRoles(externalId, roles);
+    }
+
+    @Override
+    public void assignTeam(String externalId, Long teamId) {
+        teamService.assignUserToTeam(externalId, teamId);
+    }
+
+    @Override
+    public void setManager(Long teamId, String managerExternalId) {
+        teamService.setManager(teamId, managerExternalId);
+    }
+
+    @Override
     public void syncUsersFromKeycloak() {
         List<UserRepresentation> keycloakUsers = keycloakAuthService.getAllUsers();
         for (UserRepresentation keycloakUser : keycloakUsers) {
             String externalId = keycloakUser.getId();
-            String fullName = buildFullName(keycloakUser);
             String email = keycloakUser.getEmail();
+            String nom = keycloakUser.getLastName() != null ? keycloakUser.getLastName() : "Unknown";
+            String prenom = keycloakUser.getFirstName() != null ? keycloakUser.getFirstName() : "Unknown";
+            String matricule = keycloakUser.getUsername() != null ? keycloakUser.getUsername() : externalId;
             boolean active = keycloakUser.isEnabled() == null || keycloakUser.isEnabled();
 
             userRepository.findByExternalId(externalId).ifPresentOrElse(
                     existing -> {
-                        existing.synchronizeProfile(fullName, email, active);
+                        existing.synchronizeIdentity(email, nom, prenom, matricule, active);
                         userRepository.save(existing);
                     },
                     () -> {
-                        User user = new User(externalId, fullName, email);
-                        user.updateActivation(active);
+                        User user = new User(externalId, email, nom, prenom, matricule, active);
                         userRepository.save(user);
                     });
         }
@@ -88,13 +122,6 @@ public class AdminUserServiceImpl implements AdminUserService {
                 user.getEmail(),
                 user.isActif(),
                 roles);
-    }
-
-    private String buildFullName(UserRepresentation user) {
-        String firstName = user.getFirstName() == null ? "" : user.getFirstName().trim();
-        String lastName = user.getLastName() == null ? "" : user.getLastName().trim();
-        String fullName = (firstName + " " + lastName).trim();
-        return fullName.isBlank() ? "Unknown User" : fullName;
     }
 
     private Set<String> normalizeRoles(Set<String> roles) {
@@ -115,4 +142,3 @@ public class AdminUserServiceImpl implements AdminUserService {
         return normalized;
     }
 }
-

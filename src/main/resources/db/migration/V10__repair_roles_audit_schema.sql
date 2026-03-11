@@ -1,0 +1,12 @@
+-- Repair roles table to match domain entity (AuditedEntity)
+ALTER TABLE roles
+ADD COLUMN IF NOT EXISTS created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP;
+
+ALTER TABLE roles
+ADD COLUMN IF NOT EXISTS created_by VARCHAR(255);
+
+ALTER TABLE roles
+ADD COLUMN IF NOT EXISTS last_modified_at TIMESTAMP;
+
+ALTER TABLE roles
+ADD COLUMN IF NOT EXISTS last_modified_by VARCHAR(255);

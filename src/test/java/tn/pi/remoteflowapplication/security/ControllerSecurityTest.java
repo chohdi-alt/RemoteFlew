@@ -45,273 +45,274 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 @SpringBootTest(properties = {
-        "spring.datasource.url=jdbc:h2:mem:testdb;DB_CLOSE_DELAY=-1",
-        "spring.datasource.driver-class-name=org.h2.Driver",
-        "spring.jpa.hibernate.ddl-auto=none",
-        "spring.flyway.enabled=false"
+                "spring.datasource.url=jdbc:h2:mem:testdb;MODE=MySQL;DATABASE_TO_LOWER=TRUE;DB_CLOSE_DELAY=-1",
+                "spring.datasource.driver-class-name=org.h2.Driver",
+                "spring.jpa.hibernate.ddl-auto=validate",
+                "spring.flyway.enabled=true",
+                "alfresco.telework-folder-id=test",
+                "alfresco.pending-folder-id=test",
+                "alfresco.approved-folder-id=test",
+                "alfresco.rejected-folder-id=test"
 })
 @AutoConfigureMockMvc
 class ControllerSecurityTest {
 
-    @Autowired
-    private MockMvc mockMvc;
+        @Autowired
+        private MockMvc mockMvc;
 
-    @Autowired
-    private JwtAuthenticationConverter jwtAuthenticationConverter;
+        @Autowired
+        private JwtAuthenticationConverter jwtAuthenticationConverter;
 
-    @MockBean
-    private CreateTeleworkRequestHandler createTeleworkRequestHandler;
+        @MockBean
+        private CreateTeleworkRequestHandler createTeleworkRequestHandler;
 
-    @MockBean
-    private ManagerApprovalHandler managerApprovalHandler;
+        @MockBean
+        private ManagerApprovalHandler managerApprovalHandler;
 
-    @MockBean
-    private HrApprovalHandler hrApprovalHandler;
+        @MockBean
+        private HrApprovalHandler hrApprovalHandler;
 
-    @MockBean
-    private TeleworkStatusQueryService teleworkStatusQueryService;
+        @MockBean
+        private TeleworkStatusQueryService teleworkStatusQueryService;
 
-    @MockBean
-    private KeycloakTokenService keycloakTokenService;
+        @MockBean
+        private KeycloakTokenService keycloakTokenService;
 
-    @MockBean
-    private DashboardService dashboardService;
+        @MockBean
+        private DashboardService dashboardService;
 
-    @TestConfiguration
-    static class TestJwtConfig {
-        @Bean
-        JwtDecoder jwtDecoder() {
-            return token -> Jwt.withTokenValue(token)
-                    .header("alg", "none")
-                    .claim("sub", "test-user")
-                    .build();
+        @TestConfiguration
+        static class TestJwtConfig {
+                @Bean
+                JwtDecoder jwtDecoder() {
+                        return token -> Jwt.withTokenValue(token)
+                                        .header("alg", "none")
+                                        .claim("sub", "test-user")
+                                        .build();
+                }
+
         }
-    }
 
-    @Test
-    void employeeCanCreateRequests() throws Exception {
-        when(createTeleworkRequestHandler.handle(any(), any())).thenReturn(1L);
+        @Test
+        void employeeCanCreateRequests() throws Exception {
+                when(createTeleworkRequestHandler.handle(any(), any())).thenReturn(1L);
 
-        String json = """
-                {
-                  "employeeId": "emp-1",
-                  "startDate": "2026-02-02",
-                  "endDate": "2026-02-02",
-                  "reason": "reason"
-                }
-                """;
-
-        MockMultipartFile data = new MockMultipartFile(
-                "data",
-                "data.json",
-                MediaType.APPLICATION_JSON_VALUE,
-                json.getBytes()
-        );
-        MockMultipartFile file = new MockMultipartFile(
-                "file",
-                "justif.txt",
-                MediaType.TEXT_PLAIN_VALUE,
-                "x".getBytes()
-        );
-
-        mockMvc.perform(multipart("/api/telework")
-                        .file(data)
-                        .file(file)
-                        .with(jwt().jwt(jwt -> jwt.subject("emp-1"))
-                                .authorities(new SimpleGrantedAuthority("ROLE_EMPLOYEE"))))
-                .andExpect(status().isOk());
-    }
-
-    @Test
-    void managerCannotCreateRequests() throws Exception {
-        String json = """
-                {
-                  "employeeId": "emp-1",
-                  "startDate": "2026-02-02",
-                  "endDate": "2026-02-02",
-                  "reason": "reason"
-                }
-                """;
-
-        MockMultipartFile data = new MockMultipartFile(
-                "data",
-                "data.json",
-                MediaType.APPLICATION_JSON_VALUE,
-                json.getBytes()
-        );
-        MockMultipartFile file = new MockMultipartFile(
-                "file",
-                "justif.txt",
-                MediaType.TEXT_PLAIN_VALUE,
-                "x".getBytes()
-        );
-
-        mockMvc.perform(multipart("/api/telework")
-                        .file(data)
-                        .file(file)
-                        .with(jwt().jwt(jwt -> jwt.subject("manager-1"))
-                                .authorities(new SimpleGrantedAuthority("ROLE_MANAGER"))))
-                .andExpect(status().isForbidden());
-    }
-
-    @Test
-    void hrCannotApproveManagerEndpoints() throws Exception {
-        String body = """
-                {
-                  "requestId": 1,
-                  "managerId": "hr-1",
-                  "comment": "ok"
-                }
-                """;
-
-        mockMvc.perform(post("/api/telework/1/manager/approve")
-                        .param("taskKey", "123")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(body)
-                        .with(jwt().jwt(jwt -> jwt.subject("hr-1"))
-                                .authorities(new SimpleGrantedAuthority("ROLE_HR"))))
-                .andExpect(status().isForbidden());
-    }
-
-    @Test
-    void unauthorizedAccessReturns401() throws Exception {
-        mockMvc.perform(get("/api/employee/telework"))
-                .andExpect(status().isUnauthorized());
-    }
-
-    @Test
-    void forbiddenAccessReturns403() throws Exception {
-        mockMvc.perform(get("/api/employee/telework")
-                        .with(jwt().jwt(jwt -> jwt.subject("manager-1"))
-                                .authorities(new SimpleGrantedAuthority("ROLE_MANAGER"))))
-                .andExpect(status().isForbidden());
-    }
-
-    @Test
-    void authLoginEndpointIsPublic() throws Exception {
-        when(keycloakTokenService.login(anyString(), anyString()))
-                .thenReturn(new AuthTokenResponse(
-                        "access-token",
-                        "refresh-token",
-                        "Bearer",
-                        300L,
-                        1800L,
-                        List.of("ROLE_EMPLOYEE")));
-
-        mockMvc.perform(post("/api/auth/login")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("""
+                String json = """
                                 {
-                                  "username": "employee-1",
-                                  "password": "password"
+                                  "employeeId": "emp-1",
+                                  "startDate": "2026-02-02",
+                                  "endDate": "2026-02-02",
+                                  "reason": "reason"
                                 }
-                                """))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.accessToken").value("access-token"))
-                .andExpect(jsonPath("$.refreshToken").value("refresh-token"))
-                .andExpect(jsonPath("$.tokenType").value("Bearer"))
-                .andExpect(jsonPath("$.expiresIn").value(300))
-                .andExpect(jsonPath("$.refreshExpiresIn").value(1800))
-                .andExpect(jsonPath("$.roles[0]").value("ROLE_EMPLOYEE"));
-    }
+                                """;
 
-    @Test
-    void authRefreshEndpointIsPublic() throws Exception {
-        when(keycloakTokenService.refresh(anyString()))
-                .thenReturn(new AuthTokenResponse(
-                        "new-access-token",
-                        "new-refresh-token",
-                        "Bearer",
-                        300L,
-                        1800L,
-                        List.of("ROLE_EMPLOYEE")));
+                MockMultipartFile data = new MockMultipartFile(
+                                "data",
+                                "data.json",
+                                MediaType.APPLICATION_JSON_VALUE,
+                                json.getBytes());
+                MockMultipartFile file = new MockMultipartFile(
+                                "file",
+                                "justif.txt",
+                                MediaType.TEXT_PLAIN_VALUE,
+                                "x".getBytes());
 
-        mockMvc.perform(post("/api/auth/refresh")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("""
+                mockMvc.perform(multipart("/api/telework")
+                                .file(data)
+                                .file(file)
+                                .with(jwt().jwt(jwt -> jwt.subject("emp-1"))
+                                                .authorities(new SimpleGrantedAuthority("ROLE_EMPLOYEE"))))
+                                .andExpect(status().isOk());
+        }
+
+        @Test
+        void managerCannotCreateRequests() throws Exception {
+                String json = """
                                 {
-                                  "refreshToken": "refresh-token"
+                                  "employeeId": "emp-1",
+                                  "startDate": "2026-02-02",
+                                  "endDate": "2026-02-02",
+                                  "reason": "reason"
                                 }
-                                """))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.accessToken").value("new-access-token"))
-                .andExpect(jsonPath("$.refreshToken").value("new-refresh-token"))
-                .andExpect(jsonPath("$.tokenType").value("Bearer"))
-                .andExpect(jsonPath("$.expiresIn").value(300))
-                .andExpect(jsonPath("$.refreshExpiresIn").value(1800))
-                .andExpect(jsonPath("$.roles[0]").value("ROLE_EMPLOYEE"));
-    }
+                                """;
 
-    @Test
-    void jwtRoleMappingUsesRealmAccess() {
-        Jwt jwt = Jwt.withTokenValue("token")
-                .header("alg", "none")
-                .claim("sub", "user-1")
-                .claim("realm_access", Map.of("roles", List.of("EMPLOYEE", "HR")))
-                .build();
+                MockMultipartFile data = new MockMultipartFile(
+                                "data",
+                                "data.json",
+                                MediaType.APPLICATION_JSON_VALUE,
+                                json.getBytes());
+                MockMultipartFile file = new MockMultipartFile(
+                                "file",
+                                "justif.txt",
+                                MediaType.TEXT_PLAIN_VALUE,
+                                "x".getBytes());
 
-        var auth = jwtAuthenticationConverter.convert(jwt);
+                mockMvc.perform(multipart("/api/telework")
+                                .file(data)
+                                .file(file)
+                                .with(jwt().jwt(jwt -> jwt.subject("manager-1"))
+                                                .authorities(new SimpleGrantedAuthority("ROLE_MANAGER"))))
+                                .andExpect(status().isForbidden());
+        }
 
-        List<String> authorities = auth.getAuthorities()
-                .stream()
-                .map(GrantedAuthority::getAuthority)
-                .collect(Collectors.toList());
+        @Test
+        void hrCannotApproveManagerEndpoints() throws Exception {
+                String body = """
+                                {
+                                  "requestId": 1,
+                                  "managerId": "hr-1",
+                                  "comment": "ok"
+                                }
+                                """;
 
-        assertTrue(authorities.contains("ROLE_EMPLOYEE"));
-        assertTrue(authorities.contains("ROLE_HR"));
-    }
+                mockMvc.perform(post("/api/telework/1/manager/approve")
+                                .param("taskKey", "123")
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content(body)
+                                .with(jwt().jwt(jwt -> jwt.subject("hr-1"))
+                                                .authorities(new SimpleGrantedAuthority("ROLE_HR"))))
+                                .andExpect(status().isForbidden());
+        }
 
-    @Test
-    void employeeHistoryForbiddenWhenOwnershipFails() throws Exception {
-        when(teleworkStatusQueryService.getRequestHistory(eq(99L), any()))
-                .thenThrow(new ForbiddenOperationException("forbidden"));
+        @Test
+        void unauthorizedAccessReturns401() throws Exception {
+                mockMvc.perform(get("/api/employee/telework"))
+                                .andExpect(status().isUnauthorized());
+        }
 
-        mockMvc.perform(get("/api/telework/99/history")
-                        .with(jwt().jwt(jwt -> jwt.subject("emp-2"))
-                                .authorities(new SimpleGrantedAuthority("ROLE_EMPLOYEE"))))
-                .andExpect(status().isForbidden());
-    }
+        @Test
+        void forbiddenAccessReturns403() throws Exception {
+                mockMvc.perform(get("/api/employee/telework")
+                                .with(jwt().jwt(jwt -> jwt.subject("manager-1"))
+                                                .authorities(new SimpleGrantedAuthority("ROLE_MANAGER"))))
+                                .andExpect(status().isForbidden());
+        }
 
-    @Test
-    void adminCanAccessAdminDashboard() throws Exception {
-        when(dashboardService.getAdminDashboard(any(), any()))
-                .thenReturn(new AdminDashboardDTO(
-                        Map.of(RequestStatus.SUBMITTED, 1L),
-                        10.0d,
-                        5.0d,
-                        List.of(new MonthlyCountDTO(2026, 2, 1L)),
-                        2L,
-                        1L,
-                        120.0d));
+        @Test
+        void authLoginEndpointIsPublic() throws Exception {
+                when(keycloakTokenService.login(anyString(), anyString()))
+                                .thenReturn(new AuthTokenResponse(
+                                                "access-token",
+                                                "refresh-token",
+                                                "Bearer",
+                                                300L,
+                                                1800L,
+                                                List.of("ROLE_EMPLOYEE")));
 
-        mockMvc.perform(get("/api/dashboard/admin")
-                        .with(jwt().jwt(jwt -> jwt.subject("admin-1"))
-                                .authorities(new SimpleGrantedAuthority("ROLE_ADMIN"))))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.pendingManagerTasks").value(2))
-                .andExpect(jsonPath("$.pendingHrTasks").value(1));
-    }
+                mockMvc.perform(post("/api/auth/login")
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content("""
+                                                {
+                                                  "username": "employee-1",
+                                                  "password": "password"
+                                                }
+                                                """))
+                                .andExpect(status().isOk())
+                                .andExpect(jsonPath("$.accessToken").value("access-token"))
+                                .andExpect(jsonPath("$.refreshToken").value("refresh-token"))
+                                .andExpect(jsonPath("$.tokenType").value("Bearer"))
+                                .andExpect(jsonPath("$.expiresIn").value(300))
+                                .andExpect(jsonPath("$.refreshExpiresIn").value(1800))
+                                .andExpect(jsonPath("$.roles[0]").value("ROLE_EMPLOYEE"));
+        }
 
-    @Test
-    void employeeCannotAccessAdminDashboard() throws Exception {
-        mockMvc.perform(get("/api/dashboard/admin")
-                        .with(jwt().jwt(jwt -> jwt.subject("emp-1"))
-                                .authorities(new SimpleGrantedAuthority("ROLE_EMPLOYEE"))))
-                .andExpect(status().isForbidden());
-    }
+        @Test
+        void authRefreshEndpointIsPublic() throws Exception {
+                when(keycloakTokenService.refresh(anyString()))
+                                .thenReturn(new AuthTokenResponse(
+                                                "new-access-token",
+                                                "new-refresh-token",
+                                                "Bearer",
+                                                300L,
+                                                1800L,
+                                                List.of("ROLE_EMPLOYEE")));
 
-    @Test
-    void employeeCanAccessEmployeeDashboard() throws Exception {
-        when(dashboardService.getEmployeeDashboard(anyString(), any(), any()))
-                .thenReturn(new EmployeeDashboardDTO(
-                        Map.of(RequestStatus.SUBMITTED, 2L),
-                        List.of(new MonthlyCountDTO(2026, 2, 2L)),
-                        List.of()));
+                mockMvc.perform(post("/api/auth/refresh")
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content("""
+                                                {
+                                                  "refreshToken": "refresh-token"
+                                                }
+                                                """))
+                                .andExpect(status().isOk())
+                                .andExpect(jsonPath("$.accessToken").value("new-access-token"))
+                                .andExpect(jsonPath("$.refreshToken").value("new-refresh-token"))
+                                .andExpect(jsonPath("$.tokenType").value("Bearer"))
+                                .andExpect(jsonPath("$.expiresIn").value(300))
+                                .andExpect(jsonPath("$.refreshExpiresIn").value(1800))
+                                .andExpect(jsonPath("$.roles[0]").value("ROLE_EMPLOYEE"));
+        }
 
-        mockMvc.perform(get("/api/dashboard/employee")
-                        .with(jwt().jwt(jwt -> jwt.subject("emp-1"))
-                                .authorities(new SimpleGrantedAuthority("ROLE_EMPLOYEE"))))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.myTotalsByStatus.SUBMITTED").value(2));
-    }
+        @Test
+        void jwtRoleMappingUsesRealmAccess() {
+                Jwt jwt = Jwt.withTokenValue("token")
+                                .header("alg", "none")
+                                .claim("sub", "user-1")
+                                .claim("realm_access", Map.of("roles", List.of("EMPLOYEE", "HR")))
+                                .build();
+
+                var auth = jwtAuthenticationConverter.convert(jwt);
+
+                List<String> authorities = auth.getAuthorities()
+                                .stream()
+                                .map(GrantedAuthority::getAuthority)
+                                .collect(Collectors.toList());
+
+                assertTrue(authorities.contains("ROLE_EMPLOYEE"));
+                assertTrue(authorities.contains("ROLE_HR"));
+        }
+
+        @Test
+        void employeeHistoryForbiddenWhenOwnershipFails() throws Exception {
+                when(teleworkStatusQueryService.getRequestHistory(eq(99L), any()))
+                                .thenThrow(new ForbiddenOperationException("forbidden"));
+
+                mockMvc.perform(get("/api/telework/99/history")
+                                .with(jwt().jwt(jwt -> jwt.subject("emp-2"))
+                                                .authorities(new SimpleGrantedAuthority("ROLE_EMPLOYEE"))))
+                                .andExpect(status().isForbidden());
+        }
+
+        @Test
+        void adminCanAccessAdminDashboard() throws Exception {
+                when(dashboardService.getAdminDashboard(any(), any()))
+                                .thenReturn(new AdminDashboardDTO(
+                                                Map.of(RequestStatus.SUBMITTED, 1L),
+                                                10.0d,
+                                                5.0d,
+                                                List.of(new MonthlyCountDTO(2026, 2, 1L)),
+                                                2L,
+                                                1L,
+                                                120.0d));
+
+                mockMvc.perform(get("/api/dashboard/admin")
+                                .with(jwt().jwt(jwt -> jwt.subject("admin-1"))
+                                                .authorities(new SimpleGrantedAuthority("ROLE_ADMIN"))))
+                                .andExpect(status().isOk())
+                                .andExpect(jsonPath("$.pendingManagerTasks").value(2))
+                                .andExpect(jsonPath("$.pendingHrTasks").value(1));
+        }
+
+        @Test
+        void employeeCannotAccessAdminDashboard() throws Exception {
+                mockMvc.perform(get("/api/dashboard/admin")
+                                .with(jwt().jwt(jwt -> jwt.subject("emp-1"))
+                                                .authorities(new SimpleGrantedAuthority("ROLE_EMPLOYEE"))))
+                                .andExpect(status().isForbidden());
+        }
+
+        @Test
+        void employeeCanAccessEmployeeDashboard() throws Exception {
+                when(dashboardService.getEmployeeDashboard(anyString(), any(), any()))
+                                .thenReturn(new EmployeeDashboardDTO(
+                                                Map.of(RequestStatus.SUBMITTED, 2L),
+                                                List.of(new MonthlyCountDTO(2026, 2, 2L)),
+                                                List.of()));
+
+                mockMvc.perform(get("/api/dashboard/employee")
+                                .with(jwt().jwt(jwt -> jwt.subject("emp-1"))
+                                                .authorities(new SimpleGrantedAuthority("ROLE_EMPLOYEE"))))
+                                .andExpect(status().isOk())
+                                .andExpect(jsonPath("$.myTotalsByStatus.SUBMITTED").value(2));
+        }
 }

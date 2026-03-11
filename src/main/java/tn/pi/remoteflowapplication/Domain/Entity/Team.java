@@ -1,11 +1,14 @@
 package tn.pi.remoteflowapplication.domain.entity;
 
-
 import jakarta.persistence.*;
 
 @Entity
 @Table(name = "teams")
 public class Team extends Equipe {
+
+    @OneToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "manager_id")
+    private User manager;
 
     protected Team() {
     }
@@ -20,5 +23,13 @@ public class Team extends Equipe {
 
     public String getName() {
         return getNom();
+    }
+
+    public User getManager() {
+        return manager;
+    }
+
+    public void setManager(User manager) {
+        this.manager = manager;
     }
 }

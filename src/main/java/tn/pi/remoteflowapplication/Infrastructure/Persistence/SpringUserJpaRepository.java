@@ -11,4 +11,8 @@ public interface SpringUserJpaRepository extends JpaRepository<User, Long> {
 
     @Query("select u.equipe.id from User u where u.externalId = :externalId")
     Optional<Long> findTeamIdByExternalId(@Param("externalId") String externalId);
+
+    java.util.List<User> findByRoles_Name(String roleName);
+
+    java.util.List<User> findByEquipe_Id(Long teamId);
 }
