@@ -11,6 +11,10 @@ import tn.pi.remoteflowapplication.application.port.out.UserRepository;
 import tn.pi.remoteflowapplication.domain.entity.User;
 
 import java.util.Collection;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
 
 @Service
 public class KeycloakLoginSyncService {
@@ -53,24 +57,57 @@ public class KeycloakLoginSyncService {
 
             user.getRoles().clear();
 
-            java.util.Map<String, Object> realmAccess = jwt.getClaim("realm_access");
-            if (realmAccess != null && realmAccess.containsKey("roles")) {
-                @SuppressWarnings("unchecked")
-                java.util.List<String> roles = (java.util.List<String>) realmAccess.get("roles");
-                for (String roleName : roles) {
-                    if (roleName.startsWith("ROLE_")) {
-                        roleName = roleName.substring(5);
-                    }
-                    final String safeRoleName = roleName;
-                    tn.pi.remoteflowapplication.domain.entity.Role role = roleRepository
-                            .findByName(safeRoleName)
-                            .orElseGet(() -> roleRepository
-                                    .save(new tn.pi.remoteflowapplication.domain.entity.Role(safeRoleName)));
-                    user.addRole(role);
-                }
+            for (String roleName : extractRoleNames(jwt)) {
+                final String safeRoleName = roleName;
+                tn.pi.remoteflowapplication.domain.entity.Role role = roleRepository
+                        .findByName(safeRoleName)
+                        .orElseGet(() -> roleRepository
+                                .save(new tn.pi.remoteflowapplication.domain.entity.Role(safeRoleName)));
+                user.addRole(role);
             }
 
             userRepository.save(user);
         }
+    }
+
+    private Set<String> extractRoleNames(Jwt jwt) {
+        Set<String> roles = new LinkedHashSet<>();
+
+        Object realmAccessRaw = jwt.getClaim("realm_access");
+        if (realmAccessRaw instanceof Map<?, ?> realmAccess) {
+            Object realmRolesRaw = realmAccess.get("roles");
+            if (realmRolesRaw instanceof List<?> realmRoles) {
+                for (Object roleRaw : realmRoles) {
+                    if (roleRaw instanceof String roleName && !roleName.isBlank()) {
+                        roles.add(normalizeRoleName(roleName));
+                    }
+                }
+            }
+        }
+
+        Object resourceAccessRaw = jwt.getClaim("resource_access");
+        if (resourceAccessRaw instanceof Map<?, ?> resourceAccess) {
+            for (Object clientAccessRaw : resourceAccess.values()) {
+                if (!(clientAccessRaw instanceof Map<?, ?> clientAccess)) {
+                    continue;
+                }
+                Object clientRolesRaw = clientAccess.get("roles");
+                if (!(clientRolesRaw instanceof List<?> clientRoles)) {
+                    continue;
+                }
+                for (Object roleRaw : clientRoles) {
+                    if (roleRaw instanceof String roleName && !roleName.isBlank()) {
+                        roles.add(normalizeRoleName(roleName));
+                    }
+                }
+            }
+        }
+
+        return roles;
+    }
+
+    private String normalizeRoleName(String roleName) {
+        String normalized = roleName.trim();
+        return normalized.startsWith("ROLE_") ? normalized.substring(5) : normalized;
     }
 }

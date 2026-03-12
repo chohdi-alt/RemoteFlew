@@ -6,8 +6,9 @@ public record AdminUserDTO(
         String externalId,
         String fullName,
         String email,
+        String matricule,
         boolean active,
-        Set<String> roles
+        Set<String> roles,
+        String teamName
 ) {
 }
-

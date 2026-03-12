@@ -1,8 +1,13 @@
 package tn.pi.remoteflowapplication.config;
 
+import com.fasterxml.jackson.databind.DeserializationFeature;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.keycloak.OAuth2Constants;
 import org.keycloak.admin.client.Keycloak;
 import org.keycloak.admin.client.KeycloakBuilder;
+import org.jboss.resteasy.client.jaxrs.ResteasyClient;
+import org.jboss.resteasy.client.jaxrs.ResteasyClientBuilder;
+import org.jboss.resteasy.plugins.providers.jackson.ResteasyJackson2Provider;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -27,6 +32,16 @@ public class KeycloakConfig {
 
     @Bean
     public Keycloak keycloak() {
+        ObjectMapper objectMapper = new ObjectMapper()
+                .configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
+
+        ResteasyJackson2Provider jacksonProvider = new ResteasyJackson2Provider();
+        jacksonProvider.setMapper(objectMapper);
+
+        ResteasyClient resteasyClient = (ResteasyClient) ResteasyClientBuilder.newBuilder()
+                .register(jacksonProvider)
+                .build();
+
         return KeycloakBuilder.builder()
                 .serverUrl(serverUrl)
                 .realm(realm)
@@ -34,6 +49,7 @@ public class KeycloakConfig {
                 .username(username)
                 .password(password)
                 .grantType(OAuth2Constants.PASSWORD)
+                .resteasyClient(resteasyClient)
                 .build();
     }
 }

@@ -1,13 +1,18 @@
 package tn.pi.remoteflowapplication.application.service.impl;
 
 import org.keycloak.representations.idm.UserRepresentation;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.transaction.annotation.Transactional;
 import tn.pi.remoteflowapplication.application.dto.AdminUserDTO;
+import tn.pi.remoteflowapplication.application.dto.CreateUserRequest;
 import tn.pi.remoteflowapplication.application.port.out.UserRepository;
 import tn.pi.remoteflowapplication.application.service.AdminUserService;
+import tn.pi.remoteflowapplication.application.service.KeycloakUserService;
 import tn.pi.remoteflowapplication.domain.entity.User;
 import tn.pi.remoteflowapplication.domain.exception.BusinessException;
 import tn.pi.remoteflowapplication.infrastructure.security.KeycloakAuthService;
@@ -20,26 +25,33 @@ import java.util.Set;
 @Service
 public class AdminUserServiceImpl implements AdminUserService {
 
+    private static final Logger logger = LoggerFactory.getLogger(AdminUserServiceImpl.class);
+
     private final KeycloakAuthService keycloakAuthService;
     private final UserRepository userRepository;
     private final tn.pi.remoteflowapplication.application.service.TeamService teamService;
+    private final KeycloakUserService keycloakUserService;
 
     public AdminUserServiceImpl(
             KeycloakAuthService keycloakAuthService,
             UserRepository userRepository,
-            tn.pi.remoteflowapplication.application.service.TeamService teamService) {
+            tn.pi.remoteflowapplication.application.service.TeamService teamService,
+            KeycloakUserService keycloakUserService) {
         this.keycloakAuthService = keycloakAuthService;
         this.userRepository = userRepository;
         this.teamService = teamService;
+        this.keycloakUserService = keycloakUserService;
     }
 
     @Override
+    @Transactional(readOnly = true)
     public Page<AdminUserDTO> findAll(Pageable pageable) {
         return userRepository.findAll(pageable)
                 .map(this::toAdminUserDto);
     }
 
     @Override
+    @Transactional(readOnly = true)
     public AdminUserDTO updateRoles(String externalId, Set<String> roles) {
         User user = userRepository.findByExternalId(externalId)
                 .orElseThrow(() -> new BusinessException("User not found: " + externalId));
@@ -51,6 +63,7 @@ public class AdminUserServiceImpl implements AdminUserService {
     }
 
     @Override
+    @Transactional
     public AdminUserDTO updateActivation(String externalId, boolean active) {
         User user = userRepository.findByExternalId(externalId)
                 .orElseThrow(() -> new BusinessException("User not found: " + externalId));
@@ -64,15 +77,10 @@ public class AdminUserServiceImpl implements AdminUserService {
 
     @Override
     @PreAuthorize("hasRole('ADMIN')")
-    public User createUser(String username, String email, String firstName, String lastName, String password,
-            Set<String> roles) {
-        String keycloakUserId = keycloakAuthService.createUser(username, email, firstName, lastName);
-
-        keycloakAuthService.resetPassword(keycloakUserId, password);
-        keycloakAuthService.setRealmRoles(keycloakUserId, roles);
-
-        User newUser = new User(keycloakUserId, email, lastName, firstName, username, true);
-        return userRepository.save(newUser);
+    @Transactional
+    public AdminUserDTO createUser(CreateUserRequest request) {
+        User user = keycloakUserService.createUser(request);
+        return toAdminUserDto(user);
     }
 
     @Override
@@ -115,13 +123,38 @@ public class AdminUserServiceImpl implements AdminUserService {
     }
 
     private AdminUserDTO toAdminUserDto(User user) {
-        Set<String> roles = new LinkedHashSet<>(keycloakAuthService.getRealmRoles(user.getExternalId()));
+        Set<String> roles = resolveUserRoles(user);
+        String teamName = user.getEquipe() != null ? user.getEquipe().getNom() : null;
         return new AdminUserDTO(
                 user.getExternalId(),
                 user.getFullName(),
                 user.getEmail(),
+                user.getMatricule(),
                 user.isActif(),
-                roles);
+                roles,
+                teamName);
+    }
+
+    private Set<String> resolveUserRoles(User user) {
+        Set<String> localRoles = normalizeRoles(user.getRoles()
+                .stream()
+                .map(role -> role == null ? null : role.getName())
+                .collect(java.util.stream.Collectors.toCollection(LinkedHashSet::new)));
+
+        try {
+            List<String> keycloakRoles = keycloakAuthService.getRealmRoles(user.getExternalId());
+            if (keycloakRoles == null || keycloakRoles.isEmpty()) {
+                return localRoles;
+            }
+            return normalizeRoles(new LinkedHashSet<>(keycloakRoles));
+        } catch (Exception ex) {
+            logger.warn(
+                    "event=ADMIN_USER_ROLE_LOOKUP_FALLBACK externalId={} reason={} usingLocalRoles={}",
+                    user.getExternalId(),
+                    ex.getMessage(),
+                    !localRoles.isEmpty());
+            return localRoles;
+        }
     }
 
     private Set<String> normalizeRoles(Set<String> roles) {

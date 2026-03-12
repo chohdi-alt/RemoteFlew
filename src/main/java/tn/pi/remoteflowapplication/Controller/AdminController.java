@@ -9,15 +9,19 @@ import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.web.bind.annotation.*;
 import tn.pi.remoteflowapplication.application.dto.AdminUserDTO;
 import tn.pi.remoteflowapplication.application.dto.AuditLogDTO;
+import tn.pi.remoteflowapplication.application.dto.CreateUserRequest;
+import tn.pi.remoteflowapplication.application.dto.RoleDTO;
 import tn.pi.remoteflowapplication.application.dto.TeleworkQuotaConfigRequest;
 import tn.pi.remoteflowapplication.application.dto.TeleworkQuotaConfigResponse;
 import tn.pi.remoteflowapplication.application.dto.UpdateUserActivationRequest;
 import tn.pi.remoteflowapplication.application.dto.UpdateUserRolesRequest;
 import tn.pi.remoteflowapplication.application.service.AdminUserService;
 import tn.pi.remoteflowapplication.application.service.AuditLogQueryService;
+import tn.pi.remoteflowapplication.application.service.RoleService;
 import tn.pi.remoteflowapplication.application.service.SystemConfigurationService;
 
 import java.time.LocalDateTime;
+import java.util.List;
 
 @RestController
 @RequestMapping("/api/admin")
@@ -27,14 +31,17 @@ public class AdminController {
     private final AdminUserService adminUserService;
     private final AuditLogQueryService auditLogQueryService;
     private final SystemConfigurationService systemConfigurationService;
+    private final RoleService roleService;
 
     public AdminController(
             AdminUserService adminUserService,
             AuditLogQueryService auditLogQueryService,
-            SystemConfigurationService systemConfigurationService) {
+            SystemConfigurationService systemConfigurationService,
+            RoleService roleService) {
         this.adminUserService = adminUserService;
         this.auditLogQueryService = auditLogQueryService;
         this.systemConfigurationService = systemConfigurationService;
+        this.roleService = roleService;
     }
 
     @GetMapping("/users")
@@ -56,9 +63,19 @@ public class AdminController {
         return adminUserService.updateActivation(externalId, request.active());
     }
 
+    @PostMapping("/users")
+    public AdminUserDTO createUser(@RequestBody @Valid CreateUserRequest request) {
+        return adminUserService.createUser(request);
+    }
+
     @PostMapping("/users/sync")
     public void syncUsersFromKeycloak() {
         adminUserService.syncUsersFromKeycloak();
+    }
+
+    @GetMapping("/roles")
+    public List<RoleDTO> getRoles() {
+        return roleService.getRoles();
     }
 
     @GetMapping("/audit-logs")

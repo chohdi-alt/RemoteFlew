@@ -25,6 +25,7 @@
         <mapstruct.version>1.5.5.Final</mapstruct.version>
         <springdoc.version>2.5.0</springdoc.version>
         <lombok.version>1.18.32</lombok.version>
+        <keycloak.version>24.0.3</keycloak.version>
 
     </properties>
 
@@ -81,7 +82,7 @@
         <dependency>
             <groupId>org.keycloak</groupId>
             <artifactId>keycloak-admin-client</artifactId>
-            <version>22.0.1</version>
+            <version>${keycloak.version}</version>
         </dependency>
 
 

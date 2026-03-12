@@ -1,21 +1,30 @@
 package tn.pi.remoteflowapplication.infrastructure.security;
 
+import jakarta.ws.rs.NotFoundException;
 import org.keycloak.admin.client.Keycloak;
+import org.keycloak.admin.client.resource.RealmResource;
 import org.keycloak.representations.idm.GroupRepresentation;
 import org.keycloak.representations.idm.RoleRepresentation;
 import org.keycloak.representations.idm.UserRepresentation;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
+import java.util.Optional;
 import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
 @Service
 public class KeycloakAuthService {
+
+    private static final Logger logger = LoggerFactory.getLogger(KeycloakAuthService.class);
 
     private final Keycloak keycloak;
     private final String realm;
@@ -26,14 +35,14 @@ public class KeycloakAuthService {
     }
 
     public UserRepresentation getUserById(String userId) {
-        return keycloak.realm(realm)
+        return realmResource()
                 .users()
                 .get(userId)
                 .toRepresentation();
     }
 
     public List<String> getRealmRoles(String userId) {
-        return keycloak.realm(realm)
+        return realmResource()
                 .users()
                 .get(userId)
                 .roles()
@@ -45,7 +54,7 @@ public class KeycloakAuthService {
     }
 
     public List<String> getGroups(String userId) {
-        return keycloak.realm(realm)
+        return realmResource()
                 .users()
                 .get(userId)
                 .groups()
@@ -55,44 +64,104 @@ public class KeycloakAuthService {
     }
 
     public List<UserRepresentation> getAllUsers() {
-        return keycloak.realm(realm)
+        return realmResource()
                 .users()
                 .list();
     }
 
     public void setRealmRoles(String userId, Set<String> targetRoles) {
-        var realm = keycloak.realm(this.realm);
-        var realmLevel = realm.users().get(userId).roles().realmLevel();
+        RealmResource realmResource = realmResource();
+        var realmLevel = realmResource.users().get(userId).roles().realmLevel();
 
         List<RoleRepresentation> currentRoles = realmLevel.listAll();
         if (!currentRoles.isEmpty()) {
             realmLevel.remove(currentRoles);
         }
 
-        if (targetRoles == null || targetRoles.isEmpty()) {
+        Set<String> normalizedTargets = normalizeRoles(targetRoles);
+        if (normalizedTargets.isEmpty()) {
             return;
         }
 
-        Map<String, RoleRepresentation> availableRoles = realm.roles().list()
+        Map<String, RoleRepresentation> availableRoles = realmResource.roles().list()
                 .stream()
                 .collect(Collectors.toMap(
                         role -> role.getName().toUpperCase(Locale.ROOT),
                         Function.identity(),
                         (a, b) -> a));
 
-        List<RoleRepresentation> rolesToAssign = targetRoles.stream()
-                .map(this::normalizeRole)
-                .map(role -> availableRoles.get(role.toUpperCase(Locale.ROOT)))
-                .filter(java.util.Objects::nonNull)
+        List<RoleRepresentation> rolesToAssign = normalizedTargets.stream()
+                .map(roleName -> resolveOrCreateRealmRole(realmResource, availableRoles, roleName))
+                .filter(Objects::nonNull)
                 .collect(Collectors.toList());
 
-        if (!rolesToAssign.isEmpty()) {
-            realmLevel.add(rolesToAssign);
+        if (rolesToAssign.size() != normalizedTargets.size()) {
+            throw new IllegalStateException("Failed to resolve all requested Keycloak realm roles for user " + userId);
+        }
+
+        realmLevel.add(rolesToAssign);
+    }
+
+    public void assignUserToManagedGroup(String userId, String targetGroupName, Set<String> managedGroupNames) {
+        String normalizedTargetGroup = normalizeGroupName(targetGroupName);
+        if (normalizedTargetGroup.isBlank()) {
+            throw new IllegalArgumentException("Target Keycloak group name is required.");
+        }
+
+        Set<String> normalizedManagedGroups = normalizeGroupNames(managedGroupNames);
+        if (normalizedManagedGroups.isEmpty()) {
+            normalizedManagedGroups = Set.of(normalizedTargetGroup);
+        } else if (!normalizedManagedGroups.contains(normalizedTargetGroup)) {
+            normalizedManagedGroups = new LinkedHashSet<>(normalizedManagedGroups);
+            normalizedManagedGroups.add(normalizedTargetGroup);
+        }
+
+        RealmResource realmResource = realmResource();
+        var userResource = realmResource.users().get(userId);
+
+        GroupRepresentation targetGroup = findGroupByName(realmResource, normalizedTargetGroup)
+                .orElseGet(() -> createGroup(realmResource, normalizedTargetGroup));
+
+        Set<String> currentGroupIds = userResource.groups().stream()
+                .map(GroupRepresentation::getId)
+                .filter(id -> id != null && !id.isBlank())
+                .collect(Collectors.toSet());
+
+        for (String managedGroupName : normalizedManagedGroups) {
+            if (managedGroupName.equals(normalizedTargetGroup)) {
+                continue;
+            }
+
+            findGroupByName(realmResource, managedGroupName)
+                    .map(GroupRepresentation::getId)
+                    .filter(groupId -> groupId != null && !groupId.isBlank())
+                    .filter(currentGroupIds::contains)
+                    .ifPresent(userResource::leaveGroup);
+        }
+
+        if (targetGroup.getId() == null || targetGroup.getId().isBlank()) {
+            throw new IllegalStateException("Unable to resolve Keycloak group id for group " + normalizedTargetGroup);
+        }
+
+        if (!currentGroupIds.contains(targetGroup.getId())) {
+            userResource.joinGroup(targetGroup.getId());
+        }
+    }
+
+    public void deleteUser(String userId) {
+        if (userId == null || userId.isBlank()) {
+            return;
+        }
+
+        try {
+            realmResource().users().delete(userId);
+        } catch (Exception ex) {
+            logger.warn("event=KEYCLOAK_USER_DELETE_FAILED userId={} reason={}", userId, ex.getMessage(), ex);
         }
     }
 
     public void setEnabled(String userId, boolean active) {
-        var userResource = keycloak.realm(realm)
+        var userResource = realmResource()
                 .users()
                 .get(userId);
         UserRepresentation representation = userResource.toRepresentation();
@@ -108,7 +177,7 @@ public class KeycloakAuthService {
         user.setLastName(lastName);
         user.setEnabled(true);
 
-        jakarta.ws.rs.core.Response response = keycloak.realm(realm).users().create(user);
+        jakarta.ws.rs.core.Response response = realmResource().users().create(user);
         if (response.getStatus() == 201) {
             String path = response.getLocation().getPath();
             return path.substring(path.lastIndexOf('/') + 1);
@@ -122,11 +191,112 @@ public class KeycloakAuthService {
         cred.setType(org.keycloak.representations.idm.CredentialRepresentation.PASSWORD);
         cred.setValue(password);
         cred.setTemporary(false);
-        keycloak.realm(realm).users().get(userId).resetPassword(cred);
+        realmResource().users().get(userId).resetPassword(cred);
     }
 
     public List<RoleRepresentation> getAllRoles() {
-        return keycloak.realm(realm).roles().list();
+        return realmResource().roles().list();
+    }
+
+    private RealmResource realmResource() {
+        return keycloak.realm(realm);
+    }
+
+    private RoleRepresentation resolveOrCreateRealmRole(
+            RealmResource realmResource,
+            Map<String, RoleRepresentation> availableRoles,
+            String roleName) {
+        String normalizedRole = normalizeRole(roleName);
+        if (normalizedRole.isBlank()) {
+            return null;
+        }
+
+        RoleRepresentation existing = availableRoles.get(normalizedRole.toUpperCase(Locale.ROOT));
+        if (existing != null) {
+            return existing;
+        }
+
+        RoleRepresentation newRole = new RoleRepresentation();
+        newRole.setName(normalizedRole);
+        try {
+            realmResource.roles().create(newRole);
+        } catch (Exception ex) {
+            logger.error("event=KEYCLOAK_ROLE_CREATE_FAILED role={} reason={}", normalizedRole, ex.getMessage(), ex);
+        }
+
+        try {
+            RoleRepresentation created = realmResource.roles().get(normalizedRole).toRepresentation();
+            availableRoles.put(created.getName().toUpperCase(Locale.ROOT), created);
+            return created;
+        } catch (NotFoundException notFoundException) {
+            logger.error("event=KEYCLOAK_ROLE_RESOLVE_FAILED role={} reason=not-found-after-create", normalizedRole);
+            return null;
+        } catch (Exception ex) {
+            logger.error("event=KEYCLOAK_ROLE_RESOLVE_FAILED role={} reason={}", normalizedRole, ex.getMessage(), ex);
+            return null;
+        }
+    }
+
+    private GroupRepresentation createGroup(RealmResource realmResource, String groupName) {
+        GroupRepresentation newGroup = new GroupRepresentation();
+        newGroup.setName(groupName);
+
+        try {
+            realmResource.groups().add(newGroup);
+        } catch (Exception ex) {
+            logger.error("event=KEYCLOAK_GROUP_CREATE_FAILED group={} reason={}", groupName, ex.getMessage(), ex);
+        }
+
+        return findGroupByName(realmResource, groupName)
+                .orElseThrow(() -> new IllegalStateException("Unable to create or resolve Keycloak group " + groupName));
+    }
+
+    private Optional<GroupRepresentation> findGroupByName(RealmResource realmResource, String groupName) {
+        String normalizedGroupName = normalizeGroupName(groupName);
+        if (normalizedGroupName.isBlank()) {
+            return Optional.empty();
+        }
+
+        try {
+            return realmResource.groups()
+                    .groups(normalizedGroupName, Boolean.TRUE, 0, 20, true)
+                    .stream()
+                    .filter(group -> group != null && group.getName() != null)
+                    .filter(group -> normalizeGroupName(group.getName()).equals(normalizedGroupName))
+                    .findFirst();
+        } catch (Exception ex) {
+            logger.error("event=KEYCLOAK_GROUP_QUERY_FAILED group={} reason={}", normalizedGroupName, ex.getMessage(), ex);
+            return Optional.empty();
+        }
+    }
+
+    private Set<String> normalizeRoles(Set<String> roles) {
+        if (roles == null || roles.isEmpty()) {
+            return Set.of();
+        }
+
+        return roles.stream()
+                .map(this::normalizeRole)
+                .filter(role -> !role.isBlank())
+                .collect(Collectors.toCollection(LinkedHashSet::new));
+    }
+
+    private Set<String> normalizeGroupNames(Set<String> groupNames) {
+        if (groupNames == null || groupNames.isEmpty()) {
+            return Set.of();
+        }
+
+        return groupNames.stream()
+                .map(this::normalizeGroupName)
+                .filter(name -> !name.isBlank())
+                .collect(Collectors.toCollection(LinkedHashSet::new));
+    }
+
+    private String normalizeGroupName(String groupName) {
+        if (groupName == null) {
+            return "";
+        }
+        return groupName.trim().toLowerCase(Locale.ROOT);
     }
 
     private String normalizeRole(String role) {

@@ -10,7 +10,9 @@ import tn.pi.remoteflowapplication.domain.entity.User;
 import tn.pi.remoteflowapplication.domain.exception.BusinessException;
 import tn.pi.remoteflowapplication.infrastructure.security.KeycloakAuthService;
 
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Set;
 
 @Service
 public class TeamService {
@@ -31,6 +33,25 @@ public class TeamService {
     public Team createTeam(String nom, String code, Integer effectif) {
         Team team = new Team(nom, code, effectif);
         return teamRepository.save(team);
+    }
+
+    @Transactional
+    @PreAuthorize("hasRole('ADMIN')")
+    public Team createTeam(String name, String managerExternalId) {
+        if (name == null || name.isBlank()) {
+            throw new BusinessException("Team name is required.");
+        }
+        teamRepository.findByName(name).ifPresent(existing -> {
+            throw new BusinessException("Team already exists: " + name);
+        });
+
+        Team team = new Team(name);
+        Team saved = teamRepository.save(team);
+
+        if (managerExternalId != null && !managerExternalId.isBlank()) {
+            setManager(saved.getId(), managerExternalId);
+        }
+        return teamRepository.findById(saved.getId()).orElse(saved);
     }
 
     @Transactional
@@ -63,5 +84,41 @@ public class TeamService {
 
         team.setManager(manager);
         teamRepository.save(team);
+    }
+
+    @Transactional
+    @PreAuthorize("hasRole('ADMIN')")
+    public void updateTeamMembers(Long teamId, List<String> userExternalIds) {
+        Team team = teamRepository.findById(teamId)
+                .orElseThrow(() -> new BusinessException("Team not found"));
+
+        Set<String> targetIds = new LinkedHashSet<>();
+        if (userExternalIds != null) {
+            for (String externalId : userExternalIds) {
+                if (externalId != null && !externalId.isBlank()) {
+                    targetIds.add(externalId.trim());
+                }
+            }
+        }
+        if (team.getManager() != null && team.getManager().getExternalId() != null) {
+            targetIds.add(team.getManager().getExternalId());
+        }
+
+        List<User> currentMembers = userRepository.findByEquipe_Id(teamId);
+        for (User member : currentMembers) {
+            if (!targetIds.contains(member.getExternalId())) {
+                member.assignTeam(null);
+                userRepository.save(member);
+            }
+        }
+
+        for (String externalId : targetIds) {
+            User user = userRepository.findByExternalId(externalId)
+                    .orElseThrow(() -> new BusinessException("User not found: " + externalId));
+            if (user.getEquipe() == null || !teamId.equals(user.getEquipe().getId())) {
+                user.assignTeam(team);
+                userRepository.save(user);
+            }
+        }
     }
 }
