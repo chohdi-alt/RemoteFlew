@@ -70,7 +70,7 @@ class RealZeebeIntegrationTest {
     @Test
     void shouldDeployBpmnToRealZeebe() throws IOException {
         // Given: Real BPMN file from resources
-        ClassPathResource bpmnResource = new ClassPathResource("bpmn/telework_process.bpmn");
+        ClassPathResource bpmnResource = new ClassPathResource("telework_process.bpmn");
 
         // When: Deploy to real Zeebe engine
         DeploymentEvent deployment;
@@ -162,7 +162,7 @@ class RealZeebeIntegrationTest {
 
     // Helper method
     private DeploymentEvent deployBpmn() throws IOException {
-        ClassPathResource bpmnResource = new ClassPathResource("bpmn/telework_process.bpmn");
+        ClassPathResource bpmnResource = new ClassPathResource("telework_process.bpmn");
         try (InputStream bpmnStream = bpmnResource.getInputStream()) {
             return client.newDeployResourceCommand()
                     .addResourceStream(bpmnStream, "telework_process.bpmn")

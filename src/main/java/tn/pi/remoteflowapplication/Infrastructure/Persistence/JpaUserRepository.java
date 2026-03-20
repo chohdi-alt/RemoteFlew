@@ -17,13 +17,23 @@ public class JpaUserRepository implements UserRepository {
     }
 
     @Override
-    public Optional<User> findByExternalId(String externalId) {
-        return jpaRepository.findByExternalId(externalId);
+    public Optional<User> findByKeycloakId(String keycloakId) {
+        return jpaRepository.findByKeycloakId(keycloakId);
     }
 
     @Override
-    public Optional<Long> findTeamIdByExternalId(String externalId) {
-        return jpaRepository.findTeamIdByExternalId(externalId);
+    public Optional<User> findByUsername(String username) {
+        return jpaRepository.findByUsername(username);
+    }
+
+    @Override
+    public Optional<Long> findTeamIdByUsername(String username) {
+        return jpaRepository.findTeamIdByUsername(username);
+    }
+
+    @Override
+    public Optional<Long> findTeamIdByKeycloakId(String keycloakId) {
+        return jpaRepository.findTeamIdByKeycloakId(keycloakId);
     }
 
     @Override
@@ -49,5 +59,20 @@ public class JpaUserRepository implements UserRepository {
     @Override
     public java.util.List<User> findByEquipe_Id(Long teamId) {
         return jpaRepository.findByEquipe_Id(teamId);
+    }
+
+    @Override
+    public java.util.List<User> findAllWithRolesAndTeam() {
+        return jpaRepository.findAllWithRolesAndTeam();
+    }
+
+    @Override
+    public java.util.List<User> findByRoleNameWithFetch(String roleName) {
+        return jpaRepository.findByRoleNameWithFetch(roleName);
+    }
+
+    @Override
+    public java.util.List<User> findByTeamIdWithFetch(Long teamId) {
+        return jpaRepository.findByTeamIdWithFetch(teamId);
     }
 }

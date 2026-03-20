@@ -1,17 +1,20 @@
 package tn.pi.remoteflowapplication.application.port.out;
 
-import org.springframework.data.domain.Page;
-import org.springframework.data.domain.Pageable;
-import tn.pi.remoteflowapplication.application.dto.WorkflowPendingTaskDTO;
+import java.util.HashMap;
+import java.util.Map;
 
 public interface WorkflowOrchestrationPort {
     String startTeleworkProcess(Long requestId, String employeeId, Boolean specialCase);
 
-    void completeTask(String taskKey, String decision, String comment, String assignee);
+    void completeTask(String taskKey, Map<String, Object> variables);
 
-    void validateTaskKeyForRequest(String taskKey, String processInstanceId, Long requestId, String requiredRole);
+    default void completeTask(String taskKey, String decision, String comment, String assignee) {
+        Map<String, Object> variables = new HashMap<>();
+        variables.put("decision", decision);
+        if (comment != null) {
+            variables.put("managerComment", comment);
+        }
+        completeTask(taskKey, variables);
+    }
 
-    Page<WorkflowPendingTaskDTO> findPendingTasksByCandidateGroup(String candidateGroup, Pageable pageable);
-
-    long countPendingTasksByCandidateGroup(String candidateGroup);
 }

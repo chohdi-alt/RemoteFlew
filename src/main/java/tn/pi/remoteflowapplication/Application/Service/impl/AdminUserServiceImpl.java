@@ -53,7 +53,7 @@ public class AdminUserServiceImpl implements AdminUserService {
     @Override
     @Transactional(readOnly = true)
     public AdminUserDTO updateRoles(String externalId, Set<String> roles) {
-        User user = userRepository.findByExternalId(externalId)
+        User user = userRepository.findByKeycloakId(externalId)
                 .orElseThrow(() -> new BusinessException("User not found: " + externalId));
 
         Set<String> normalizedRoles = normalizeRoles(roles);
@@ -65,7 +65,7 @@ public class AdminUserServiceImpl implements AdminUserService {
     @Override
     @Transactional
     public AdminUserDTO updateActivation(String externalId, boolean active) {
-        User user = userRepository.findByExternalId(externalId)
+        User user = userRepository.findByKeycloakId(externalId)
                 .orElseThrow(() -> new BusinessException("User not found: " + externalId));
 
         keycloakAuthService.setEnabled(externalId, active);
@@ -103,20 +103,20 @@ public class AdminUserServiceImpl implements AdminUserService {
     public void syncUsersFromKeycloak() {
         List<UserRepresentation> keycloakUsers = keycloakAuthService.getAllUsers();
         for (UserRepresentation keycloakUser : keycloakUsers) {
-            String externalId = keycloakUser.getId();
+            String keycloakId = keycloakUser.getId();
             String email = keycloakUser.getEmail();
             String nom = keycloakUser.getLastName() != null ? keycloakUser.getLastName() : "Unknown";
             String prenom = keycloakUser.getFirstName() != null ? keycloakUser.getFirstName() : "Unknown";
-            String matricule = keycloakUser.getUsername() != null ? keycloakUser.getUsername() : externalId;
+            String username = keycloakUser.getUsername() != null ? keycloakUser.getUsername() : keycloakId;
             boolean active = keycloakUser.isEnabled() == null || keycloakUser.isEnabled();
 
-            userRepository.findByExternalId(externalId).ifPresentOrElse(
+            userRepository.findByKeycloakId(keycloakId).ifPresentOrElse(
                     existing -> {
-                        existing.synchronizeIdentity(email, nom, prenom, matricule, active);
+                        existing.synchronizeIdentity(keycloakId, username, email, nom, prenom, active);
                         userRepository.save(existing);
                     },
                     () -> {
-                        User user = new User(externalId, email, nom, prenom, matricule, active);
+                        User user = new User(keycloakId, email, nom, prenom, username, active);
                         userRepository.save(user);
                     });
         }
@@ -126,7 +126,7 @@ public class AdminUserServiceImpl implements AdminUserService {
         Set<String> roles = resolveUserRoles(user);
         String teamName = user.getEquipe() != null ? user.getEquipe().getNom() : null;
         return new AdminUserDTO(
-                user.getExternalId(),
+                user.getKeycloakId(),
                 user.getFullName(),
                 user.getEmail(),
                 user.getMatricule(),
@@ -142,7 +142,7 @@ public class AdminUserServiceImpl implements AdminUserService {
                 .collect(java.util.stream.Collectors.toCollection(LinkedHashSet::new)));
 
         try {
-            List<String> keycloakRoles = keycloakAuthService.getRealmRoles(user.getExternalId());
+            List<String> keycloakRoles = keycloakAuthService.getRealmRoles(user.getKeycloakId());
             if (keycloakRoles == null || keycloakRoles.isEmpty()) {
                 return localRoles;
             }
@@ -150,7 +150,7 @@ public class AdminUserServiceImpl implements AdminUserService {
         } catch (Exception ex) {
             logger.warn(
                     "event=ADMIN_USER_ROLE_LOOKUP_FALLBACK externalId={} reason={} usingLocalRoles={}",
-                    user.getExternalId(),
+                    user.getKeycloakId(),
                     ex.getMessage(),
                     !localRoles.isEmpty());
             return localRoles;

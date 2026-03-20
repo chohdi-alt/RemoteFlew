@@ -15,6 +15,8 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import tn.pi.remoteflowapplication.application.command.CreateTeleworkRequestHandler;
 import tn.pi.remoteflowapplication.application.dto.CreateTeleworkDTO;
 import tn.pi.remoteflowapplication.application.service.DomainEventPublisher;
+import tn.pi.remoteflowapplication.application.port.out.UserRepository;
+import tn.pi.remoteflowapplication.domain.entity.User;
 import tn.pi.remoteflowapplication.domain.rule.QuotaValidationRule;
 import tn.pi.remoteflowapplication.infrastructure.document.AlfrescoDocumentService;
 import tn.pi.remoteflowapplication.infrastructure.workflow.CamundaWorkflowService;
@@ -43,6 +45,8 @@ class CreateTeleworkRequestHandlerTest {
         @MockBean
         private DomainEventPublisher domainEventPublisher;
         @MockBean
+        private UserRepository userRepository;
+        @MockBean
         private JwtDecoder jwtDecoder;
         @Autowired
         private CreateTeleworkRequestHandler handler;
@@ -53,6 +57,8 @@ class CreateTeleworkRequestHandlerTest {
         @BeforeEach
         void setUp() {
                 setAuth("emp-1", "ROLE_EMPLOYEE");
+                User user = new User("emp-1", "Employee One", "emp-1@example.com");
+                when(userRepository.findByUsername("emp-1")).thenReturn(java.util.Optional.of(user));
         }
 
         @AfterEach
@@ -63,7 +69,6 @@ class CreateTeleworkRequestHandlerTest {
         @Test
         void handleValidRequestPersistsAndPublishes() throws Exception {
                 CreateTeleworkDTO dto = new CreateTeleworkDTO(
-                                "emp-1",
                                 LocalDate.of(2026, 2, 2),
                                 LocalDate.of(2026, 2, 2),
                                 "reason");
@@ -87,7 +92,6 @@ class CreateTeleworkRequestHandlerTest {
         @Test
         void handleSpecialCaseStartsWorkflowWithSpecialFlag() throws Exception {
                 CreateTeleworkDTO dto = new CreateTeleworkDTO(
-                                "emp-1",
                                 LocalDate.of(2026, 2, 2),
                                 LocalDate.of(2026, 2, 3),
                                 "reason");

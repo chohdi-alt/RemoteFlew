@@ -1,10 +1,14 @@
 package tn.pi.remoteflowapplication.application.command;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Component;
 import tn.pi.remoteflowapplication.application.dto.ApprovalDecisionDTO;
 import tn.pi.remoteflowapplication.application.port.out.DocumentStoragePort;
+import tn.pi.remoteflowapplication.application.service.WorkflowTaskService;
+import tn.pi.remoteflowapplication.domain.entity.TaskEntity;
 import tn.pi.remoteflowapplication.application.port.out.WorkflowOrchestrationPort;
 import tn.pi.remoteflowapplication.application.service.DomainEventPublisher;
 import tn.pi.remoteflowapplication.domain.exception.BusinessException;
@@ -15,22 +19,29 @@ import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.time.Instant;
+import java.util.HashMap;
+import java.util.Map;
 
 @Component
 public class HrApprovalHandler {
 
+    private static final Logger logger = LoggerFactory.getLogger(HrApprovalHandler.class);
+
     private final TeleworkRequestRepository repository;
     private final WorkflowOrchestrationPort camundaWorkflowService;
+    private final WorkflowTaskService workflowTaskService;
     private final DocumentStoragePort documentService;
     private final DomainEventPublisher domainEventPublisher;
 
     public HrApprovalHandler(
             TeleworkRequestRepository repository,
             WorkflowOrchestrationPort camundaWorkflowService,
+            WorkflowTaskService workflowTaskService,
             DomainEventPublisher domainEventPublisher,
             DocumentStoragePort documentService) {
         this.repository = repository;
         this.camundaWorkflowService = camundaWorkflowService;
+        this.workflowTaskService = workflowTaskService;
         this.domainEventPublisher = domainEventPublisher;
         this.documentService = documentService;
     }
@@ -50,11 +61,10 @@ public class HrApprovalHandler {
         }
 
         // Validate taskKey correlation before mutating state or moving documents.
-        camundaWorkflowService.validateTaskKeyForRequest(
-                taskKey,
-                request.getProcessInstanceId(),
+        TaskEntity task = workflowTaskService.validateAndGetTask(
+                Long.valueOf(taskKey),
                 requestId,
-                "ROLE_HR");
+                "HR");
         request.approve(dto.getComment());
         request.recordHrDecision(auth.getName(), Instant.now());
         request.recordApprovedAt(Instant.now());
@@ -62,15 +72,18 @@ public class HrApprovalHandler {
         repository.save(request);
         domainEventPublisher.publishEvents(request);
 
-        /* Fix Defect 1: Side effects only after successful DB commit. */
-        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
-            @Override
-            public void afterCommit() {
-                if (request.getAlfrescoNodeId() != null) {
-                    documentService.moveToApproved(request.getAlfrescoNodeId());
-                }
-                camundaWorkflowService.completeTask(taskKey, "APPROVE", dto.getComment(), auth.getName());
+        runAfterCommit(() -> {
+            if (request.getAlfrescoNodeId() != null) {
+                documentService.moveToApproved(request.getAlfrescoNodeId());
             }
+            logger.debug("Completing HR approval after commit. taskId={} jobKey={}", task.getId(), task.getJobKey());
+            Map<String, Object> variables = new HashMap<>();
+            variables.put("decision", "APPROVE");
+            if (dto.getComment() != null) {
+                variables.put("managerComment", dto.getComment());
+            }
+            camundaWorkflowService.completeTask(String.valueOf(task.getJobKey()), variables);
+            workflowTaskService.completeTask(task.getId(), auth.getName());
         });
     }
 
@@ -89,11 +102,10 @@ public class HrApprovalHandler {
         }
 
         // Validate taskKey correlation before mutating state or moving documents.
-        camundaWorkflowService.validateTaskKeyForRequest(
-                taskKey,
-                request.getProcessInstanceId(),
+        TaskEntity task = workflowTaskService.validateAndGetTask(
+                Long.valueOf(taskKey),
                 requestId,
-                "ROLE_HR");
+                "HR");
         request.reject(dto.getComment());
         request.recordHrDecision(auth.getName(), Instant.now());
         request.recordRejectedAt(Instant.now());
@@ -101,16 +113,32 @@ public class HrApprovalHandler {
         repository.save(request);
         domainEventPublisher.publishEvents(request);
 
-        /* Fix Defect 1: Side effects only after successful DB commit. */
-        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
-            @Override
-            public void afterCommit() {
-                if (request.getAlfrescoNodeId() != null) {
-                    documentService.moveToRejected(request.getAlfrescoNodeId());
-                }
-                camundaWorkflowService.completeTask(taskKey, "REJECT", dto.getComment(), auth.getName());
+        runAfterCommit(() -> {
+            if (request.getAlfrescoNodeId() != null) {
+                documentService.moveToRejected(request.getAlfrescoNodeId());
             }
+            logger.debug("Completing HR rejection after commit. taskId={} jobKey={}", task.getId(), task.getJobKey());
+            Map<String, Object> variables = new HashMap<>();
+            variables.put("decision", "REJECT");
+            if (dto.getComment() != null) {
+                variables.put("managerComment", dto.getComment());
+            }
+            camundaWorkflowService.completeTask(String.valueOf(task.getJobKey()), variables);
+            workflowTaskService.completeTask(task.getId(), auth.getName());
         });
+    }
+
+    private void runAfterCommit(Runnable action) {
+        if (TransactionSynchronizationManager.isSynchronizationActive()) {
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
+                public void afterCommit() {
+                    action.run();
+                }
+            });
+            return;
+        }
+        action.run();
     }
 
     private Authentication requireAuthenticatedWithRole(String requiredRole) {

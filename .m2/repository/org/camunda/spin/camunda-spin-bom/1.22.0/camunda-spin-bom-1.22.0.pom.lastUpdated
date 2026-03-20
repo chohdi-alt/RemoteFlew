@@ -1,0 +1,10 @@
+#NOTE: This is a Maven Resolver internal implementation file, its format can be changed without prior notice.
+#Tue Mar 17 14:15:32 WAT 2026
+https\://repository.jboss.org/nexus/content/groups/public/.lastUpdated=1773753332525
+https\://artifacts.camunda.com/artifactory/camunda-identity/.error=Could not transfer artifact org.camunda.spin\:camunda-spin-bom\:pom\:1.22.0 from/to camunda-identity (https\://artifacts.camunda.com/artifactory/camunda-identity/)\: authentication failed for https\://artifacts.camunda.com/artifactory/camunda-identity/org/camunda/spin/camunda-spin-bom/1.22.0/camunda-spin-bom-1.22.0.pom, status\: 401 Unauthorized
+https\://artifacts.camunda.com/artifactory/zeebe-io/.error=Could not transfer artifact org.camunda.spin\:camunda-spin-bom\:pom\:1.22.0 from/to zeebe (https\://artifacts.camunda.com/artifactory/zeebe-io/)\: authentication failed for https\://artifacts.camunda.com/artifactory/zeebe-io/org/camunda/spin/camunda-spin-bom/1.22.0/camunda-spin-bom-1.22.0.pom, status\: 401 Unauthorized
+@default-camunda-identity-https\://artifacts.camunda.com/artifactory/camunda-identity/.lastUpdated=1773753332048
+https\://repository.jboss.org/nexus/content/groups/public/.error=
+https\://repo1.maven.org/maven2/.lastUpdated=1773753332610
+@default-identity-https\://artifacts.camunda.com/artifactory/camunda-identity/.lastUpdated=1773753331910
+@default-zeebe-https\://artifacts.camunda.com/artifactory/zeebe-io/.lastUpdated=1773753331961

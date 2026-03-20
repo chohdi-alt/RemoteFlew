@@ -57,7 +57,7 @@ public class TeamService {
     @Transactional
     @PreAuthorize("hasRole('ADMIN')")
     public void assignUserToTeam(String externalId, Long teamId) {
-        User user = userRepository.findByExternalId(externalId)
+        User user = userRepository.findByKeycloakId(externalId)
                 .orElseThrow(() -> new BusinessException("User not found: " + externalId));
         Team team = teamRepository.findById(teamId)
                 .orElseThrow(() -> new BusinessException("Team not found"));
@@ -69,12 +69,12 @@ public class TeamService {
     @Transactional
     @PreAuthorize("hasRole('ADMIN')")
     public void setManager(Long teamId, String managerExternalId) {
-        User manager = userRepository.findByExternalId(managerExternalId)
+        User manager = userRepository.findByKeycloakId(managerExternalId)
                 .orElseThrow(() -> new BusinessException("Manager user not found: " + managerExternalId));
         Team team = teamRepository.findById(teamId)
                 .orElseThrow(() -> new BusinessException("Team not found"));
 
-        List<String> realmRoles = keycloakAuthService.getRealmRoles(managerExternalId);
+        List<String> realmRoles = keycloakAuthService.getRealmRoles(manager.getKeycloakId());
         if (realmRoles == null || (!realmRoles.contains("MANAGER") && !realmRoles.contains("ROLE_MANAGER"))) {
             throw new BusinessException("User does not have ROLE_MANAGER");
         }
@@ -113,7 +113,7 @@ public class TeamService {
         }
 
         for (String externalId : targetIds) {
-            User user = userRepository.findByExternalId(externalId)
+            User user = userRepository.findByKeycloakId(externalId)
                     .orElseThrow(() -> new BusinessException("User not found: " + externalId));
             if (user.getEquipe() == null || !teamId.equals(user.getEquipe().getId())) {
                 user.assignTeam(team);

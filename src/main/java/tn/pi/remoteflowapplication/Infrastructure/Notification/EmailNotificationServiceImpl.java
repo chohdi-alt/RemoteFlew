@@ -6,11 +6,11 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.mail.javamail.MimeMessageHelper;
 import org.springframework.stereotype.Service;
+import tn.pi.remoteflowapplication.application.port.out.UserRepository;
 import tn.pi.remoteflowapplication.application.service.EmailNotificationService;
 import tn.pi.remoteflowapplication.domain.event.TeleworkRequestApprovedEvent;
 import tn.pi.remoteflowapplication.domain.event.TeleworkRequestRejectedEvent;
 import tn.pi.remoteflowapplication.domain.event.TeleworkRequestSubmittedEvent;
-import tn.pi.remoteflowapplication.infrastructure.security.KeycloakAuthService;
 
 import jakarta.mail.internet.MimeMessage;
 import java.nio.charset.StandardCharsets;
@@ -24,20 +24,20 @@ public class EmailNotificationServiceImpl implements EmailNotificationService {
 
     private static final Logger log = LoggerFactory.getLogger(EmailNotificationServiceImpl.class);
 
-    private final KeycloakAuthService keycloakAuthService;
+    private final UserRepository userRepository;
     private final JavaMailSender mailSender;
     private final List<String> managerEmails;
     private final String fromEmail;
     private final String mailUsername;
 
     public EmailNotificationServiceImpl(
-            KeycloakAuthService keycloakAuthService,
+            UserRepository userRepository,
             JavaMailSender mailSender,
             @Value("${notification.manager.emails:}") String managerEmails,
             @Value("${notification.from-email:}") String fromEmail,
             @Value("${spring.mail.username:}") String mailUsername
     ) {
-        this.keycloakAuthService = keycloakAuthService;
+        this.userRepository = userRepository;
         this.mailSender = mailSender;
         this.managerEmails = parseEmails(managerEmails);
         this.fromEmail = fromEmail;
@@ -89,7 +89,10 @@ public class EmailNotificationServiceImpl implements EmailNotificationService {
 
     private String resolveEmployeeEmail(String employeeId) {
         try {
-            return keycloakAuthService.getUserById(employeeId).getEmail();
+            return userRepository.findByUsername(employeeId)
+                    .or(() -> userRepository.findByKeycloakId(employeeId))
+                    .map(tn.pi.remoteflowapplication.domain.entity.User::getEmail)
+                    .orElse(null);
         } catch (Exception ex) {
             log.warn("Failed to resolve email for employeeId={}", employeeId, ex);
             return null;

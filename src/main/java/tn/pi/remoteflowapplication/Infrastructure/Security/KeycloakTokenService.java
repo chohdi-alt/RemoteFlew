@@ -70,6 +70,16 @@ public class KeycloakTokenService {
         return requestToken(formData);
     }
 
+    public String getClientToken() {
+        LinkedMultiValueMap<String, String> formData = new LinkedMultiValueMap<>();
+        formData.add("grant_type", "client_credentials");
+        formData.add("client_id", clientId);
+        formData.add("client_secret", clientSecret);
+
+        AuthTokenResponse response = requestToken(formData);
+        return response.getAccessToken();
+    }
+
     private AuthTokenResponse requestToken(MultiValueMap<String, String> formData) {
         String grantType = formData.getFirst("grant_type");
         String username = formData.getFirst("username");
@@ -120,6 +130,7 @@ public class KeycloakTokenService {
             if (response.status.is4xxClientError()) {
                 KeycloakError keycloakError = parseKeycloakError(responseBody);
                 FailureAnalysis analysis = analyzeKeycloakFailure(keycloakError, responseBody);
+                boolean passwordUpdateRequired = isPasswordUpdateRequired(status, keycloakError, analysis);
 
                 logger.warn(
                         "event=AUTH_LOGIN_FAILURE keycloak.token.rejected requestId={} clientId={} username={} grantType={} status={} error={} description={} classification={} recommendedAction={}",
@@ -135,8 +146,10 @@ public class KeycloakTokenService {
                 logger.debug("keycloak.token.rejected.rawBody requestId={} body={}", requestId, responseBody);
 
                 throw new AuthenticationFailedException(
-                        "Invalid credentials or Keycloak rejected password grant",
-                        "AUTHENTICATION_FAILED",
+                        passwordUpdateRequired
+                                ? "Password update required before login."
+                                : "Invalid credentials or Keycloak rejected password grant",
+                        passwordUpdateRequired ? "PASSWORD_UPDATE_REQUIRED" : "AUTHENTICATION_FAILED",
                         keycloakError.error,
                         keycloakError.errorDescription,
                         status);
@@ -283,6 +296,33 @@ public class KeycloakTokenService {
                 ? authServerUrl.substring(0, authServerUrl.length() - 1)
                 : authServerUrl;
         return normalizedBaseUrl + "/realms/" + realm + "/protocol/openid-connect/token";
+    }
+
+    public String buildAccountConsoleUrl() {
+        String normalizedBaseUrl = authServerUrl.endsWith("/")
+                ? authServerUrl.substring(0, authServerUrl.length() - 1)
+                : authServerUrl;
+        return normalizedBaseUrl + "/realms/" + realm + "/account";
+    }
+
+    private boolean isPasswordUpdateRequired(int status, KeycloakError keycloakError, FailureAnalysis analysis) {
+        if (status != 400 && status != 401) {
+            return false;
+        }
+
+        String keycloakCode = keycloakError == null || keycloakError.error == null
+                ? ""
+                : keycloakError.error.trim().toLowerCase(Locale.ROOT);
+
+        if (!"invalid_grant".equals(keycloakCode)) {
+            return false;
+        }
+
+        String classification = analysis == null || analysis.classification == null
+                ? ""
+                : analysis.classification.toLowerCase(Locale.ROOT);
+
+        return classification.contains("required action") || classification.contains("temporary password");
     }
 
     private List<String> extractRoles(String accessToken) {

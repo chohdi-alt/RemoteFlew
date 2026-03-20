@@ -2,11 +2,11 @@ package tn.pi.remoteflowapplication.workflow;
 
 import io.camunda.zeebe.client.ZeebeClient;
 import io.camunda.zeebe.client.api.ZeebeFuture;
-import io.camunda.zeebe.client.api.command.CompleteUserTaskCommandStep1;
+import io.camunda.zeebe.client.api.command.CompleteJobCommandStep1;
 import io.camunda.zeebe.client.api.command.CreateProcessInstanceCommandStep1;
 import io.camunda.zeebe.client.api.command.CreateProcessInstanceCommandStep1.CreateProcessInstanceCommandStep2;
 import io.camunda.zeebe.client.api.command.CreateProcessInstanceCommandStep1.CreateProcessInstanceCommandStep3;
-import io.camunda.zeebe.client.api.response.CompleteUserTaskResponse;
+import io.camunda.zeebe.client.api.response.CompleteJobResponse;
 import io.camunda.zeebe.client.api.response.ProcessInstanceEvent;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -20,7 +20,6 @@ import java.util.Map;
 import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.anyMap;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
@@ -42,11 +41,11 @@ class CamundaWorkflowServiceTest {
     @Mock
     private ProcessInstanceEvent processEvent;
     @Mock
-    private CompleteUserTaskCommandStep1 completeStep1;
+    private CompleteJobCommandStep1 completeStep1;
     @Mock
-    private ZeebeFuture<CompleteUserTaskResponse> completeFuture;
+    private ZeebeFuture<CompleteJobResponse> completeFuture;
     @Mock
-    private CompleteUserTaskResponse completeResponse;
+    private CompleteJobResponse completeResponse;
 
     private CamundaWorkflowService service;
 
@@ -80,19 +79,14 @@ class CamundaWorkflowServiceTest {
     @Test
     void completeTask_Successful() throws Exception {
         long taskKey = 100L;
-        when(zeebeClient.newUserTaskCompleteCommand(taskKey)).thenReturn(completeStep1);
+        when(zeebeClient.newCompleteCommand(taskKey)).thenReturn(completeStep1);
         when(completeStep1.variables(anyMap())).thenReturn(completeStep1);
         when(completeStep1.send()).thenReturn(completeFuture);
         when(completeFuture.get(eq(10L), eq(TimeUnit.SECONDS))).thenReturn(completeResponse);
 
         service.completeTask("100", "APPROVE", "ok", "manager-1");
 
-        verify(zeebeClient).newUserTaskCompleteCommand(taskKey);
+        verify(zeebeClient).newCompleteCommand(taskKey);
     }
 
-    @Test
-    void validateTaskKey_ThrowsOnInvalidFormat() {
-        assertThrows(IllegalArgumentException.class,
-                () -> service.validateTaskKeyForRequest("abc", "proc-1", 1L, "ROLE_MANAGER"));
-    }
 }

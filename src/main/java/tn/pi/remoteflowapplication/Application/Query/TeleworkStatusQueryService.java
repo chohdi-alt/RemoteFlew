@@ -8,6 +8,7 @@ import tn.pi.remoteflowapplication.domain.entity.TeleworkRequest;
 import tn.pi.remoteflowapplication.domain.exception.ForbiddenOperationException;
 import tn.pi.remoteflowapplication.domain.state.RequestStatus;
 import tn.pi.remoteflowapplication.application.port.out.TeleworkRequestRepository;
+import tn.pi.remoteflowapplication.application.port.out.UserRepository;
 
 import java.util.List;
 import java.util.stream.Collectors;
@@ -18,10 +19,13 @@ import tn.pi.remoteflowapplication.domain.exception.ResourceNotFoundException;
 public class TeleworkStatusQueryService {
 
         private final TeleworkRequestRepository repository;
+        private final UserRepository userRepository;
 
         public TeleworkStatusQueryService(
-                        TeleworkRequestRepository repository) {
+                        TeleworkRequestRepository repository,
+                        UserRepository userRepository) {
                 this.repository = repository;
+                this.userRepository = userRepository;
         }
 
         public List<TeleworkStatusDTO> findByEmployee(String employeeId) {
@@ -50,16 +54,51 @@ public class TeleworkStatusQueryService {
                                 .collect(Collectors.toList());
         }
 
-        public TeleworkStatusDTO findById(Long id) {
-                return repository.findById(id)
-                                .map(r -> new TeleworkStatusDTO(
-                                                r.getId(),
-                                                r.getStartDate(),
-                                                r.getEndDate(),
-                                                r.getStatus().name(),
-                                                r.getDecisionComment().orElse(null),
-                                                r.getStatus() == RequestStatus.SPECIAL))
-                                .orElse(null);
+        public TeleworkStatusDTO findById(Long id, Authentication authentication) {
+                TeleworkRequest request = repository.findById(id)
+                                .orElseThrow(() -> new ResourceNotFoundException("Request not found"));
+
+                enforceRequestOwnership(request, authentication);
+
+                return new TeleworkStatusDTO(
+                                request.getId(),
+                                request.getStartDate(),
+                                request.getEndDate(),
+                                request.getStatus().name(),
+                                request.getDecisionComment().orElse(null),
+                                request.getStatus() == RequestStatus.SPECIAL);
+        }
+
+        private void enforceRequestOwnership(TeleworkRequest request, Authentication authentication) {
+                if (authentication == null || !authentication.isAuthenticated()) {
+                        throw new ForbiddenOperationException("Unauthenticated");
+                }
+
+                String username = authentication.getName();
+                boolean isAdmin = hasRole(authentication, "ROLE_ADMIN");
+                boolean isHr = hasRole(authentication, "ROLE_HR");
+                boolean isManager = hasRole(authentication, "ROLE_MANAGER");
+
+                // Admin and HR can see everything
+                if (isAdmin || isHr) {
+                        return;
+                }
+
+                // Managers can see requests for their team
+                if (isManager) {
+                        Long managerTeamId = userRepository.findTeamIdByUsername(username).orElse(null);
+                        if (managerTeamId != null && managerTeamId.equals(request.getTeamId())) {
+                                return;
+                        }
+                        // Fall through to check if they are the creator (just in case)
+                }
+
+                // Employees can only see their own requests
+                if (request.getEmployeeId().equals(username)) {
+                        return;
+                }
+
+                throw new ForbiddenOperationException("You are not allowed to access this request.");
         }
 
         public List<AuditHistoryDTO> getRequestHistory(Long requestId, Authentication authentication) {

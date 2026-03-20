@@ -1,15 +1,13 @@
 package tn.pi.remoteflowapplication.application.dto;
 
-import jakarta.validation.constraints.NotBlank;
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 
 import java.time.LocalDate;
 
+@JsonIgnoreProperties(ignoreUnknown = true)
 public class CreateTeleworkDTO {
-
-    @NotBlank(message = "employeeId must not be blank")
-    private String employeeId;
 
     @NotNull(message = "startDate must not be null")
     private LocalDate startDate;
@@ -24,19 +22,13 @@ public class CreateTeleworkDTO {
     }
 
     public CreateTeleworkDTO(
-            String employeeId,
             LocalDate startDate,
             LocalDate endDate,
             String reason
     ) {
-        this.employeeId = employeeId;
         this.startDate = startDate;
         this.endDate = endDate;
         this.reason = reason;
-    }
-
-    public String getEmployeeId() {
-        return employeeId;
     }
 
     public LocalDate getStartDate() {

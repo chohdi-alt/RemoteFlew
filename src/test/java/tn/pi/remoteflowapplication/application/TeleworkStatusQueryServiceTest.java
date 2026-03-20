@@ -7,6 +7,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import tn.pi.remoteflowapplication.application.port.out.TeleworkRequestRepository;
+import tn.pi.remoteflowapplication.application.port.out.UserRepository;
 import tn.pi.remoteflowapplication.application.query.TeleworkStatusQueryService;
 import tn.pi.remoteflowapplication.domain.entity.TeleworkRequest;
 import tn.pi.remoteflowapplication.domain.exception.ForbiddenOperationException;
@@ -25,6 +26,9 @@ class TeleworkStatusQueryServiceTest {
     @Mock
     private TeleworkRequestRepository teleworkRequestRepository;
 
+    @Mock
+    private UserRepository userRepository;
+
     @Test
     void employeeCanReadOwnHistory() {
         TeleworkRequest request = TeleworkRequest.create(
@@ -34,7 +38,7 @@ class TeleworkStatusQueryServiceTest {
 
         when(teleworkRequestRepository.findById(1L)).thenReturn(Optional.of(request));
 
-        TeleworkStatusQueryService service = new TeleworkStatusQueryService(teleworkRequestRepository);
+        TeleworkStatusQueryService service = new TeleworkStatusQueryService(teleworkRequestRepository, userRepository);
         var auth = new UsernamePasswordAuthenticationToken(
                 "emp-1",
                 "n/a",
@@ -54,7 +58,7 @@ class TeleworkStatusQueryServiceTest {
 
         when(teleworkRequestRepository.findById(1L)).thenReturn(Optional.of(request));
 
-        TeleworkStatusQueryService service = new TeleworkStatusQueryService(teleworkRequestRepository);
+        TeleworkStatusQueryService service = new TeleworkStatusQueryService(teleworkRequestRepository, userRepository);
         var auth = new UsernamePasswordAuthenticationToken(
                 "emp-2",
                 "n/a",
@@ -72,7 +76,7 @@ class TeleworkStatusQueryServiceTest {
 
         when(teleworkRequestRepository.findById(1L)).thenReturn(Optional.of(request));
 
-        TeleworkStatusQueryService service = new TeleworkStatusQueryService(teleworkRequestRepository);
+        TeleworkStatusQueryService service = new TeleworkStatusQueryService(teleworkRequestRepository, userRepository);
         var auth = new UsernamePasswordAuthenticationToken(
                 "manager-1",
                 "n/a",

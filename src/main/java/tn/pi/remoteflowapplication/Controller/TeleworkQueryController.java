@@ -49,8 +49,8 @@ public class TeleworkQueryController {
     // Manager / HR / Admin: view request details
     @GetMapping("/telework/{id}")
     @PreAuthorize("hasAnyRole('MANAGER','HR','ADMIN')")
-    public TeleworkStatusDTO getRequestById(@PathVariable Long id) {
-        return queryService.findById(id);
+    public TeleworkStatusDTO getRequestById(@PathVariable Long id, Authentication authentication) {
+        return queryService.findById(id, authentication);
     }
 
     @GetMapping("/employee/telework")

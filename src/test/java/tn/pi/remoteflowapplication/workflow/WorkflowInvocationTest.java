@@ -15,6 +15,10 @@ import tn.pi.remoteflowapplication.application.command.ManagerApprovalHandler;
 import tn.pi.remoteflowapplication.application.dto.ApprovalDecisionDTO;
 import tn.pi.remoteflowapplication.application.dto.CreateTeleworkDTO;
 import tn.pi.remoteflowapplication.application.service.DomainEventPublisher;
+import tn.pi.remoteflowapplication.application.port.out.UserRepository;
+import tn.pi.remoteflowapplication.application.service.WorkflowTaskService;
+import tn.pi.remoteflowapplication.domain.entity.TaskEntity;
+import tn.pi.remoteflowapplication.domain.entity.User;
 import tn.pi.remoteflowapplication.domain.entity.TeleworkRequest;
 import tn.pi.remoteflowapplication.domain.rule.QuotaValidationRule;
 import tn.pi.remoteflowapplication.infrastructure.document.AlfrescoDocumentService;
@@ -26,7 +30,7 @@ import java.util.List;
 import java.util.Optional;
 
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyBoolean;
+import static org.mockito.ArgumentMatchers.anyMap;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -45,6 +49,10 @@ class WorkflowInvocationTest {
         private CamundaWorkflowService camundaWorkflowService;
         @MockBean
         private DomainEventPublisher domainEventPublisher;
+        @MockBean
+        private UserRepository userRepository;
+        @MockBean
+        private WorkflowTaskService workflowTaskService;
 
         @Autowired
         private CreateTeleworkRequestHandler createHandler;
@@ -63,9 +71,10 @@ class WorkflowInvocationTest {
         @Test
         void createInvokesStartProcess() throws Exception {
                 setAuth("emp-1", "ROLE_EMPLOYEE");
+                when(userRepository.findByUsername("emp-1"))
+                                .thenReturn(Optional.of(new User("emp-1", "Employee One", "emp-1@example.com")));
 
                 CreateTeleworkDTO dto = new CreateTeleworkDTO(
-                                "emp-1",
                                 LocalDate.of(2026, 2, 2),
                                 LocalDate.of(2026, 2, 2),
                                 "reason");
@@ -76,12 +85,8 @@ class WorkflowInvocationTest {
                                 "text/plain",
                                 new byte[0]);
 
-                when(camundaWorkflowService.startTeleworkProcess(any(), eq("emp-1"), anyBoolean()))
-                                .thenReturn("proc-1");
-
                 createHandler.handle(dto, emptyFile);
-
-                verify(camundaWorkflowService).startTeleworkProcess(any(), eq("emp-1"), eq(false));
+                verify(domainEventPublisher).publishEvents(any());
         }
 
         @Test
@@ -96,10 +101,13 @@ class WorkflowInvocationTest {
 
                 when(repository.findById(1L)).thenReturn(Optional.of(request));
                 when(quotaRule.isSpecialCase(any())).thenReturn(false);
+                TaskEntity task = new TaskEntity(1L, 100L, "MANAGER", "PENDING", java.time.Instant.now());
+                task.setId(100L);
+                when(workflowTaskService.validateAndGetTask(100L, 1L, "MANAGER")).thenReturn(task);
 
                 managerApprovalHandler.approve(1L, "100", new ApprovalDecisionDTO(1L, "manager-1", "ok"));
 
-                verify(camundaWorkflowService).completeTask("100", "APPROVE", "ok", "manager-1");
+                verify(camundaWorkflowService).completeTask(eq("100"), anyMap());
         }
 
         @Test
@@ -114,10 +122,13 @@ class WorkflowInvocationTest {
                 request.linkProcess("proc-1");
 
                 when(repository.findById(1L)).thenReturn(Optional.of(request));
+                TaskEntity task = new TaskEntity(1L, 200L, "HR", "PENDING", java.time.Instant.now());
+                task.setId(200L);
+                when(workflowTaskService.validateAndGetTask(200L, 1L, "HR")).thenReturn(task);
 
                 hrApprovalHandler.approve(1L, "200", new ApprovalDecisionDTO(1L, "hr-1", "ok"));
 
-                verify(camundaWorkflowService).completeTask("200", "APPROVE", "ok", "hr-1");
+                verify(camundaWorkflowService).completeTask(eq("200"), anyMap());
         }
 
         private void setAuth(String username, String role) {

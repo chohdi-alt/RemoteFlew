@@ -65,6 +65,27 @@ public class JpaTeleworkRequestRepository implements TeleworkRequestRepository {
     }
 
     @Override
+    public void reassignEmployeeId(String previousEmployeeId, String currentEmployeeId) {
+        if (previousEmployeeId == null || currentEmployeeId == null) {
+            return;
+        }
+        String previous = previousEmployeeId.trim();
+        String current = currentEmployeeId.trim();
+        if (previous.isBlank() || current.isBlank() || previous.equals(current)) {
+            return;
+        }
+
+        entityManager.createQuery("""
+                        update TeleworkRequest r
+                        set r.employeeId = :currentEmployeeId
+                        where r.employeeId = :previousEmployeeId
+                        """)
+                .setParameter("previousEmployeeId", previous)
+                .setParameter("currentEmployeeId", current)
+                .executeUpdate();
+    }
+
+    @Override
     public void deleteById(Long id) {
         jpaRepository.deleteById(id);
     }

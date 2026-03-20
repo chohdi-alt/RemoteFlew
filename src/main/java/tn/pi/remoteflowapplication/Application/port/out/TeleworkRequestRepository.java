@@ -23,6 +23,8 @@ public interface TeleworkRequestRepository {
 
     List<TeleworkRequest> findAll();
 
+    void reassignEmployeeId(String previousEmployeeId, String currentEmployeeId);
+
     void deleteById(Long id);
 
     void deleteAll();

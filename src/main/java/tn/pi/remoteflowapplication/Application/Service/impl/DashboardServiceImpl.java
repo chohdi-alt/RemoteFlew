@@ -8,8 +8,9 @@ import tn.pi.remoteflowapplication.application.dto.HrDashboardDTO;
 import tn.pi.remoteflowapplication.application.dto.ManagerDashboardDTO;
 import tn.pi.remoteflowapplication.application.dto.MonthlyCountDTO;
 import tn.pi.remoteflowapplication.application.dto.TeleworkStatusDTO;
+import tn.pi.remoteflowapplication.application.port.out.TeamRepository;
 import tn.pi.remoteflowapplication.application.port.out.UserRepository;
-import tn.pi.remoteflowapplication.application.port.out.WorkflowOrchestrationPort;
+import tn.pi.remoteflowapplication.application.service.WorkflowTaskService;
 import tn.pi.remoteflowapplication.application.service.DashboardService;
 import tn.pi.remoteflowapplication.domain.entity.TeleworkRequest;
 import tn.pi.remoteflowapplication.domain.state.RequestStatus;
@@ -27,20 +28,20 @@ import java.util.Map;
 @Service
 public class DashboardServiceImpl implements DashboardService {
 
-    private static final String MANAGER_GROUP = "MANAGER";
-    private static final String HR_GROUP = "HR";
-
     private final SpringTeleworkJpaRepository teleworkRepository;
     private final UserRepository userRepository;
-    private final WorkflowOrchestrationPort workflowOrchestrationPort;
+    private final TeamRepository teamRepository;
+    private final WorkflowTaskService workflowTaskService;
 
     public DashboardServiceImpl(
             SpringTeleworkJpaRepository teleworkRepository,
             UserRepository userRepository,
-            WorkflowOrchestrationPort workflowOrchestrationPort) {
+            TeamRepository teamRepository,
+            WorkflowTaskService workflowTaskService) {
         this.teleworkRepository = teleworkRepository;
         this.userRepository = userRepository;
-        this.workflowOrchestrationPort = workflowOrchestrationPort;
+        this.teamRepository = teamRepository;
+        this.workflowTaskService = workflowTaskService;
     }
 
     @Override
@@ -57,8 +58,8 @@ public class DashboardServiceImpl implements DashboardService {
                 calculateRate(totalsByStatus.get(RequestStatus.APPROVED), total),
                 calculateRate(totalsByStatus.get(RequestStatus.REJECTED), total),
                 toMonthlyCounts(teleworkRepository.countGroupedByMonth(fromInstant, toExclusiveInstant)),
-                workflowOrchestrationPort.countPendingTasksByCandidateGroup(MANAGER_GROUP),
-                workflowOrchestrationPort.countPendingTasksByCandidateGroup(HR_GROUP),
+                workflowTaskService.countPendingTasksForManager(),
+                workflowTaskService.countPendingTasksForHr(),
                 safeDouble(teleworkRepository.averageTotalCycleTime()));
     }
 
@@ -70,52 +71,57 @@ public class DashboardServiceImpl implements DashboardService {
         return new HrDashboardDTO(
                 toStatusMap(teleworkRepository.countByStatusAndDateRange(fromInstant, toExclusiveInstant)),
                 toMonthlyCounts(teleworkRepository.countGroupedByMonth(fromInstant, toExclusiveInstant)),
-                workflowOrchestrationPort.countPendingTasksByCandidateGroup(HR_GROUP),
+                workflowTaskService.countPendingTasksForHr(),
                 safeDouble(teleworkRepository.averageHrDecisionTime()));
     }
 
     @Override
-    public ManagerDashboardDTO getManagerDashboard(String managerExternalId, LocalDate from, LocalDate to) {
+    public ManagerDashboardDTO getManagerDashboard(String managerUsername, LocalDate from, LocalDate to) {
         Instant fromInstant = toFromInstant(from);
         Instant toExclusiveInstant = toExclusiveToInstant(to);
 
-        Long teamId = userRepository.findTeamIdByExternalId(managerExternalId)
-                .orElse(null);
+        List<Long> managedTeamIds = teamRepository.findManagedTeamIdsByUsername(managerUsername);
+        Long teamId = managedTeamIds.isEmpty() ? null : managedTeamIds.get(0);
 
         if (teamId == null) {
             return new ManagerDashboardDTO(
                     emptyStatusMap(),
                     List.of(),
-                    workflowOrchestrationPort.countPendingTasksByCandidateGroup(MANAGER_GROUP),
+                    0,
                     0.0);
         }
 
+        Map<RequestStatus, Long> teamTotals = toStatusMap(
+                teleworkRepository.countByStatusAndDateRangeForTeam(teamId, fromInstant, toExclusiveInstant));
+
+        long pendingForTeam = teamTotals.getOrDefault(RequestStatus.SUBMITTED, 0L)
+                + teamTotals.getOrDefault(RequestStatus.SPECIAL, 0L);
+
         return new ManagerDashboardDTO(
-                toStatusMap(
-                        teleworkRepository.countByStatusAndDateRangeForTeam(teamId, fromInstant, toExclusiveInstant)),
+                teamTotals,
                 toMonthlyCounts(teleworkRepository.countGroupedByMonthForTeam(teamId, fromInstant, toExclusiveInstant)),
-                workflowOrchestrationPort.countPendingTasksByCandidateGroup(MANAGER_GROUP),
+                pendingForTeam,
                 safeDouble(teleworkRepository.averageManagerDecisionTimeForTeam(teamId)));
     }
 
     @Override
-    public EmployeeDashboardDTO getEmployeeDashboard(String employeeExternalId, LocalDate from, LocalDate to) {
+    public EmployeeDashboardDTO getEmployeeDashboard(String employeeUsername, LocalDate from, LocalDate to) {
         Instant fromInstant = toFromInstant(from);
         Instant toExclusiveInstant = toExclusiveToInstant(to);
 
         List<TeleworkStatusDTO> recentRequests = teleworkRepository
-                .findByEmployeeIdOrderBySubmittedAtDesc(employeeExternalId, PageRequest.of(0, 10))
+                .findByEmployeeIdOrderBySubmittedAtDesc(employeeUsername, PageRequest.of(0, 10))
                 .stream()
                 .map(this::toTeleworkStatusDto)
                 .toList();
 
         return new EmployeeDashboardDTO(
                 toStatusMap(teleworkRepository.countByStatusAndDateRangeForEmployee(
-                        employeeExternalId,
+                        employeeUsername,
                         fromInstant,
                         toExclusiveInstant)),
                 toMonthlyCounts(teleworkRepository.countGroupedByMonthForEmployee(
-                        employeeExternalId,
+                        employeeUsername,
                         fromInstant,
                         toExclusiveInstant)),
                 recentRequests);

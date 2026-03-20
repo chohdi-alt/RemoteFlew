@@ -47,8 +47,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @SpringBootTest(properties = {
                 "spring.datasource.url=jdbc:h2:mem:testdb;MODE=MySQL;DATABASE_TO_LOWER=TRUE;DB_CLOSE_DELAY=-1",
                 "spring.datasource.driver-class-name=org.h2.Driver",
-                "spring.jpa.hibernate.ddl-auto=validate",
-                "spring.flyway.enabled=true",
+                "spring.jpa.hibernate.ddl-auto=create-drop",
+                "spring.flyway.enabled=false",
                 "alfresco.telework-folder-id=test",
                 "alfresco.pending-folder-id=test",
                 "alfresco.approved-folder-id=test",

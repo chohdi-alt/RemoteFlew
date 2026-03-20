@@ -18,7 +18,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  */
 class TeleworkProcessValidationTest {
 
-    private static final String BPMN_PATH = "bpmn/telework_process.bpmn";
+    private static final String BPMN_PATH = "telework_process.bpmn";
 
     @Test
     void shouldLoadAndParseBpmnProcess() throws Exception {

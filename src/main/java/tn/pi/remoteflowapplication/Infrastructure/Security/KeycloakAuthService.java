@@ -3,6 +3,7 @@ package tn.pi.remoteflowapplication.infrastructure.security;
 import jakarta.ws.rs.NotFoundException;
 import org.keycloak.admin.client.Keycloak;
 import org.keycloak.admin.client.resource.RealmResource;
+import org.keycloak.representations.idm.CredentialRepresentation;
 import org.keycloak.representations.idm.GroupRepresentation;
 import org.keycloak.representations.idm.RoleRepresentation;
 import org.keycloak.representations.idm.UserRepresentation;
@@ -11,6 +12,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
+import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
@@ -25,6 +27,8 @@ import java.util.stream.Collectors;
 public class KeycloakAuthService {
 
     private static final Logger logger = LoggerFactory.getLogger(KeycloakAuthService.class);
+    private static final String DEFAULT_TEMPORARY_PASSWORD = "remoteflow";
+    private static final String REQUIRED_ACTION_UPDATE_PASSWORD = "UPDATE_PASSWORD";
 
     private final Keycloak keycloak;
     private final String realm;
@@ -176,14 +180,17 @@ public class KeycloakAuthService {
         user.setFirstName(firstName);
         user.setLastName(lastName);
         user.setEnabled(true);
+        user.setRequiredActions(List.of(REQUIRED_ACTION_UPDATE_PASSWORD));
+        user.setCredentials(List.of(buildTemporaryPasswordCredential()));
 
-        jakarta.ws.rs.core.Response response = realmResource().users().create(user);
-        if (response.getStatus() == 201) {
-            String path = response.getLocation().getPath();
-            return path.substring(path.lastIndexOf('/') + 1);
+        try (jakarta.ws.rs.core.Response response = realmResource().users().create(user)) {
+            if (response.getStatus() == 201) {
+                String path = response.getLocation().getPath();
+                return path.substring(path.lastIndexOf('/') + 1);
+            }
+            throw new RuntimeException(
+                    "Failed to create Keycloak user, status: " + response.getStatusInfo().getReasonPhrase());
         }
-        throw new RuntimeException(
-                "Failed to create Keycloak user, status: " + response.getStatusInfo().getReasonPhrase());
     }
 
     public void resetPassword(String userId, String password) {
@@ -192,6 +199,56 @@ public class KeycloakAuthService {
         cred.setValue(password);
         cred.setTemporary(false);
         realmResource().users().get(userId).resetPassword(cred);
+    }
+
+    public Optional<String> findUserIdByUsername(String username) {
+        if (username == null || username.isBlank()) {
+            return Optional.empty();
+        }
+
+        String normalizedUsername = username.trim();
+        return realmResource().users().searchByUsername(normalizedUsername, true)
+                .stream()
+                .filter(user -> user.getUsername() != null)
+                .filter(user -> user.getUsername().equalsIgnoreCase(normalizedUsername))
+                .map(UserRepresentation::getId)
+                .filter(id -> id != null && !id.isBlank())
+                .findFirst();
+    }
+
+    public void clearRequiredAction(String userId, String requiredAction) {
+        if (userId == null || userId.isBlank() || requiredAction == null || requiredAction.isBlank()) {
+            return;
+        }
+
+        var userResource = realmResource().users().get(userId);
+        UserRepresentation representation = userResource.toRepresentation();
+
+        List<String> requiredActions = new ArrayList<>(representation.getRequiredActions() == null
+                ? List.of()
+                : representation.getRequiredActions());
+
+        boolean changed = requiredActions.removeIf(action -> requiredAction.equalsIgnoreCase(action));
+        if (!changed) {
+            return;
+        }
+
+        representation.setRequiredActions(requiredActions);
+        userResource.update(representation);
+    }
+
+    public boolean hasRequiredAction(String userId, String requiredAction) {
+        if (userId == null || userId.isBlank() || requiredAction == null || requiredAction.isBlank()) {
+            return false;
+        }
+
+        UserRepresentation representation = realmResource().users().get(userId).toRepresentation();
+        List<String> requiredActions = representation.getRequiredActions();
+        if (requiredActions == null || requiredActions.isEmpty()) {
+            return false;
+        }
+
+        return requiredActions.stream().anyMatch(action -> requiredAction.equalsIgnoreCase(action));
     }
 
     public List<RoleRepresentation> getAllRoles() {
@@ -308,5 +365,13 @@ public class KeycloakAuthService {
             return value.substring(5);
         }
         return value;
+    }
+
+    private CredentialRepresentation buildTemporaryPasswordCredential() {
+        CredentialRepresentation credential = new CredentialRepresentation();
+        credential.setType(CredentialRepresentation.PASSWORD);
+        credential.setValue(DEFAULT_TEMPORARY_PASSWORD);
+        credential.setTemporary(true);
+        return credential;
     }
 }

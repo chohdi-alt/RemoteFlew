@@ -74,7 +74,7 @@ public class KeycloakUserService {
 
         keycloakUserSyncService.synchronizeUsersAndRoles();
 
-        return userRepository.findByExternalId(keycloakUserId)
+        return userRepository.findByKeycloakId(keycloakUserId)
                 .orElseThrow(() -> new BusinessException("User synchronization failed for: " + keycloakUserId));
     }
 

@@ -31,6 +31,16 @@ public class JpaTeamRepository implements TeamRepository {
     }
 
     @Override
+    public List<Team> findAllFetched() {
+        return jpaRepository.findAllFetched();
+    }
+
+    @Override
+    public List<Long> findManagedTeamIdsByUsername(String username) {
+        return jpaRepository.findManagedTeamIdsByUsername(username);
+    }
+
+    @Override
     public Team save(Team team) {
         return jpaRepository.save(team);
     }

@@ -17,6 +17,8 @@ import tn.pi.remoteflowapplication.domain.entity.TeleworkRequest;
 import tn.pi.remoteflowapplication.infrastructure.document.AlfrescoDocumentService;
 import tn.pi.remoteflowapplication.infrastructure.workflow.CamundaWorkflowService;
 import tn.pi.remoteflowapplication.application.port.out.TeleworkRequestRepository;
+import tn.pi.remoteflowapplication.infrastructure.persistence.SpringUserJpaRepository;
+import tn.pi.remoteflowapplication.domain.entity.User;
 import java.time.LocalDate;
 import java.util.List;
 
@@ -36,6 +38,9 @@ class TeleworkWorkflowIntegrationTest {
     @Autowired
     private TeleworkRequestRepository repository;
 
+    @Autowired
+    private SpringUserJpaRepository userRepository;
+
     @MockBean
     private CamundaWorkflowService camundaWorkflowService;
 
@@ -45,12 +50,14 @@ class TeleworkWorkflowIntegrationTest {
     @BeforeEach
     void setUp() {
         SecurityContextHolder.clearContext();
+        seedEmployeeUser();
     }
 
     @AfterEach
     void cleanup() {
         SecurityContextHolder.clearContext();
         repository.deleteAll();
+        userRepository.deleteAll();
     }
 
     @Test
@@ -58,7 +65,6 @@ class TeleworkWorkflowIntegrationTest {
         authenticateAs("employee-1");
 
         CreateTeleworkDTO dto = new CreateTeleworkDTO(
-                "employee-1",
                 LocalDate.of(2026, 2, 2),
                 LocalDate.of(2026, 2, 3),
                 "Need 2 days");
@@ -85,5 +91,12 @@ class TeleworkWorkflowIntegrationTest {
         UsernamePasswordAuthenticationToken auth = new UsernamePasswordAuthenticationToken(username, "n/a",
                 List.of(new SimpleGrantedAuthority(role)));
         SecurityContextHolder.getContext().setAuthentication(auth);
+    }
+
+    private void seedEmployeeUser() {
+        String username = "employee-1";
+        if (userRepository.findByUsername(username).isEmpty()) {
+            userRepository.save(new User(username, "Employee One", "employee-1@example.com"));
+        }
     }
 }

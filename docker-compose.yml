@@ -53,23 +53,6 @@ services:
     networks:
       - camunda-platform
 
-  tasklist:
-    image: camunda/tasklist:8.5.3
-    container_name: tasklist
-    ports:
-      - "8086:8080"
-    environment:
-      - CAMUNDA_TASKLIST_ZEEBE_GATEWAYADDRESS=zeebe:26500
-      - CAMUNDA_TASKLIST_ELASTICSEARCH_URL=http://elasticsearch:9200
-      - CAMUNDA_TASKLIST_ZEEBE_ELASTICSEARCH_URL=http://elasticsearch:9200
-      - CAMUNDA_TASKLIST_USERNAME=demo
-      - CAMUNDA_TASKLIST_PASSWORD=demo
-    depends_on:
-      - zeebe
-      - elasticsearch
-    networks:
-      - camunda-platform
-
   elasticsearch:
     image: docker.elastic.co/elasticsearch/elasticsearch:7.17.22
     container_name: elasticsearch

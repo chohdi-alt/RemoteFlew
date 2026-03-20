@@ -8,8 +8,11 @@ import java.util.Set;
 @Table(name = "users")
 public class User extends Utilisateur {
 
-    @Column(name = "external_id", unique = true, nullable = false)
-    private String externalId; // Keycloak userId
+    @Column(name = "keycloak_id", unique = true, nullable = false, updatable = false)
+    private String keycloakId;
+
+    @Column(name = "username", unique = true, nullable = false)
+    private String username;
 
     @Column(name = "full_name", nullable = false)
     private String fullName;
@@ -25,20 +28,37 @@ public class User extends Utilisateur {
     protected User() {
     }
 
-    public User(String externalId, String fullName, String email) {
-        super(email, extractNom(fullName), extractPrenom(fullName), externalId, true);
-        this.externalId = externalId;
+    public User(String keycloakId, String username, String fullName, String email) {
+        super(email, extractNom(fullName), extractPrenom(fullName), username, true);
+        this.keycloakId = requireIdentityValue(keycloakId, "keycloakId");
+        this.username = requireIdentityValue(username, "username");
         this.fullName = normalizeFullName(fullName);
     }
 
-    public User(String externalId, String email, String nom, String prenom, String matricule, boolean actif) {
-        super(email, nom, prenom, matricule, actif);
-        this.externalId = externalId;
+    public User(String keycloakId, String email, String nom, String prenom, String username, boolean actif) {
+        super(email, nom, prenom, username, actif);
+        this.keycloakId = requireIdentityValue(keycloakId, "keycloakId");
+        this.username = requireIdentityValue(username, "username");
         this.fullName = buildFullName(prenom, nom);
     }
 
+    /**
+     * Legacy constructor kept for backward compatibility with existing call sites.
+     */
+    public User(String externalId, String fullName, String email) {
+        this(externalId, externalId, fullName, email);
+    }
+
+    public String getKeycloakId() {
+        return keycloakId;
+    }
+
+    public String getUsername() {
+        return username;
+    }
+
     public String getExternalId() {
-        return externalId;
+        return keycloakId;
     }
 
     public String getFullName() {
@@ -55,7 +75,9 @@ public class User extends Utilisateur {
         }
     }
 
-    public void synchronizeProfile(String fullName, String email, boolean active) {
+    public void synchronizeProfile(String username, String fullName, String email, boolean active) {
+        this.username = requireIdentityValue(username, "username");
+        setMatricule(this.username);
         setPrenom(extractPrenom(fullName));
         setNom(extractNom(fullName));
         setEmail(normalizeValue(email));
@@ -63,13 +85,50 @@ public class User extends Utilisateur {
         this.fullName = normalizeFullName(fullName);
     }
 
-    public void synchronizeIdentity(String email, String nom, String prenom, String matricule, boolean active) {
+    public void synchronizeIdentity(
+            String keycloakId,
+            String username,
+            String email,
+            String nom,
+            String prenom,
+            boolean active) {
+        this.keycloakId = requireIdentityValue(keycloakId, "keycloakId");
+        this.username = requireIdentityValue(username, "username");
         setNom(normalizeValue(nom));
         setPrenom(normalizeValue(prenom));
-        setMatricule(normalizeValue(matricule));
+        setMatricule(this.username);
         setEmail(normalizeValue(email));
         setActif(active);
         this.fullName = buildFullName(prenom, nom);
+    }
+
+    public void synchronizeJwtProfile(
+            String keycloakId,
+            String username,
+            String email,
+            String fullName,
+            boolean active) {
+        this.keycloakId = requireIdentityValue(keycloakId, "keycloakId");
+        this.username = requireIdentityValue(username, "username");
+        setMatricule(this.username);
+        setPrenom(extractPrenom(fullName));
+        setNom(extractNom(fullName));
+        setEmail(normalizeValue(email));
+        setActif(active);
+        this.fullName = normalizeFullName(fullName);
+    }
+
+    /**
+     * Legacy sync API kept for existing call sites during transition.
+     */
+    public void synchronizeIdentity(String email, String nom, String prenom, String matricule, boolean active) {
+        synchronizeIdentity(
+                this.keycloakId,
+                normalizeUsername(matricule, this.username),
+                email,
+                nom,
+                prenom,
+                active);
     }
 
     public void updateActivation(boolean active) {
@@ -84,6 +143,10 @@ public class User extends Utilisateur {
     @PreUpdate
     private void generateFullName() {
         this.fullName = buildFullName(getPrenom(), getNom());
+        if (username == null || username.isBlank()) {
+            this.username = normalizeUsername(getMatricule(), keycloakId);
+        }
+        setMatricule(this.username);
     }
 
     private static String extractPrenom(String fullName) {
@@ -145,5 +208,21 @@ public class User extends Utilisateur {
         String trimmed = value.trim();
 
         return trimmed.isBlank() ? null : trimmed;
+    }
+
+    private static String requireIdentityValue(String value, String field) {
+        String normalized = normalizeValue(value);
+        if (normalized == null) {
+            throw new IllegalArgumentException(field + " must not be blank");
+        }
+        return normalized;
+    }
+
+    private static String normalizeUsername(String username, String fallback) {
+        String normalized = normalizeValue(username);
+        if (normalized != null) {
+            return normalized;
+        }
+        return requireIdentityValue(fallback, "username");
     }
 }

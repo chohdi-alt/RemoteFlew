@@ -155,6 +155,19 @@ public class GlobalExceptionHandler {
                 request);
     }
 
+    @ExceptionHandler(Exception.class)
+    public ResponseEntity<ApiError> handleGeneralException(Exception ex, HttpServletRequest request) {
+        logger.error("event=INTERNAL_SERVER_ERROR path={} message={}",
+                request == null ? null : request.getRequestURI(),
+                ex.getMessage(),
+                ex);
+        return buildError(
+                HttpStatus.INTERNAL_SERVER_ERROR,
+                "INTERNAL_SERVER_ERROR",
+                "An unexpected error occurred. Please contact support.",
+                request);
+    }
+
     private ResponseEntity<ApiError> buildError(
             HttpStatus status,
             String code,

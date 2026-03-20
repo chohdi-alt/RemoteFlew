@@ -11,5 +11,13 @@ public interface TeamRepository {
 
     List<Team> findAll();
 
+    List<Team> findAllFetched();
+
+    List<Long> findManagedTeamIdsByUsername(String username);
+
+    default List<Long> findManagedTeamIdsByExternalId(String externalId) {
+        return findManagedTeamIdsByUsername(externalId);
+    }
+
     Team save(Team team);
 }

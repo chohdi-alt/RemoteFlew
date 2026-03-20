@@ -93,6 +93,14 @@ public abstract class DemandeTeletravail extends AuditedEntity {
         return equipe;
     }
 
+    public void setCreateur(User createur) {
+        this.createur = createur;
+    }
+
+    public void setEquipe(Team equipe) {
+        this.equipe = equipe;
+    }
+
     public List<Justificatif> getJustificatifs() {
         return Collections.unmodifiableList(justificatifs);
     }

@@ -1,10 +1,14 @@
 package tn.pi.remoteflowapplication.application.command;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Component;
 import tn.pi.remoteflowapplication.application.dto.ApprovalDecisionDTO;
 import tn.pi.remoteflowapplication.application.port.out.DocumentStoragePort;
+import tn.pi.remoteflowapplication.application.service.WorkflowTaskService;
+import tn.pi.remoteflowapplication.domain.entity.TaskEntity;
 import tn.pi.remoteflowapplication.application.port.out.WorkflowOrchestrationPort;
 import tn.pi.remoteflowapplication.application.service.DomainEventPublisher;
 import tn.pi.remoteflowapplication.domain.exception.BusinessException;
@@ -16,12 +20,17 @@ import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.time.Instant;
+import java.util.HashMap;
+import java.util.Map;
 
 @Component
 public class ManagerApprovalHandler {
 
+    private static final Logger logger = LoggerFactory.getLogger(ManagerApprovalHandler.class);
+
     private final TeleworkRequestRepository repository;
     private final WorkflowOrchestrationPort camundaWorkflowService;
+    private final WorkflowTaskService workflowTaskService;
     private final QuotaValidationRule quotaValidationRule;
     private final DomainEventPublisher domainEventPublisher;
     private final DocumentStoragePort documentService;
@@ -29,11 +38,13 @@ public class ManagerApprovalHandler {
     public ManagerApprovalHandler(
             TeleworkRequestRepository repository,
             WorkflowOrchestrationPort camundaWorkflowService,
+            WorkflowTaskService workflowTaskService,
             QuotaValidationRule quotaValidationRule,
             DomainEventPublisher domainEventPublisher,
             DocumentStoragePort documentService) {
         this.repository = repository;
         this.camundaWorkflowService = camundaWorkflowService;
+        this.workflowTaskService = workflowTaskService;
         this.quotaValidationRule = quotaValidationRule;
         this.domainEventPublisher = domainEventPublisher;
         this.documentService = documentService;
@@ -45,7 +56,7 @@ public class ManagerApprovalHandler {
         var request = repository.findById(requestId)
                 .orElseThrow(() -> new BusinessException("Request not found"));
 
-        if (request.getStatus() != RequestStatus.SUBMITTED) {
+        if (request.getStatus() != RequestStatus.SUBMITTED && request.getStatus() != RequestStatus.SPECIAL) {
             throw new BusinessException("Request not ready for manager approval");
         }
 
@@ -56,11 +67,10 @@ public class ManagerApprovalHandler {
         }
 
         // Validate taskKey correlation (stateless).
-        camundaWorkflowService.validateTaskKeyForRequest(
-                taskKey,
-                request.getProcessInstanceId(),
+        TaskEntity task = workflowTaskService.validateAndGetTask(
+                Long.valueOf(taskKey),
                 requestId,
-                "ROLE_MANAGER");
+                "MANAGER");
 
         if (specialCase) {
             request.markAsSpecial();
@@ -74,15 +84,20 @@ public class ManagerApprovalHandler {
         repository.save(request);
         domainEventPublisher.publishEvents(request);
 
-        /* Fix Defect 1: Side effects only after successful DB commit. */
-        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
-            @Override
-            public void afterCommit() {
-                if (!specialCase && request.getAlfrescoNodeId() != null) {
-                    documentService.moveToApproved(request.getAlfrescoNodeId());
-                }
-                camundaWorkflowService.completeTask(taskKey, "APPROVE", dto.getComment(), auth.getName());
+        runAfterCommit(() -> {
+            if (!specialCase && request.getAlfrescoNodeId() != null) {
+                documentService.moveToApproved(request.getAlfrescoNodeId());
             }
+            logger.debug("Completing manager approval after commit. taskId={} jobKey={} specialCase={}",
+                    task.getId(), task.getJobKey(), specialCase);
+            Map<String, Object> variables = new HashMap<>();
+            variables.put("decision", "APPROVE");
+            variables.put("specialCase", specialCase);
+            if (dto.getComment() != null) {
+                variables.put("managerComment", dto.getComment());
+            }
+            camundaWorkflowService.completeTask(String.valueOf(task.getJobKey()), variables);
+            workflowTaskService.completeTask(task.getId(), auth.getName());
         });
     }
 
@@ -92,7 +107,7 @@ public class ManagerApprovalHandler {
         var request = repository.findById(requestId)
                 .orElseThrow(() -> new BusinessException("Request not found"));
 
-        if (request.getStatus() != RequestStatus.SUBMITTED) {
+        if (request.getStatus() != RequestStatus.SUBMITTED && request.getStatus() != RequestStatus.SPECIAL) {
             throw new BusinessException("Request not ready for manager approval");
         }
 
@@ -101,11 +116,10 @@ public class ManagerApprovalHandler {
         }
 
         // Validate taskKey correlation before mutating state or moving documents.
-        camundaWorkflowService.validateTaskKeyForRequest(
-                taskKey,
-                request.getProcessInstanceId(),
+        TaskEntity task = workflowTaskService.validateAndGetTask(
+                Long.valueOf(taskKey),
                 requestId,
-                "ROLE_MANAGER");
+                "MANAGER");
 
         request.reject(dto.getComment());
         request.recordManagerDecision(auth.getName(), Instant.now());
@@ -114,16 +128,32 @@ public class ManagerApprovalHandler {
         repository.save(request);
         domainEventPublisher.publishEvents(request);
 
-        /* Fix Defect 1: Side effects only after successful DB commit. */
-        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
-            @Override
-            public void afterCommit() {
-                if (request.getAlfrescoNodeId() != null) {
-                    documentService.moveToRejected(request.getAlfrescoNodeId());
-                }
-                camundaWorkflowService.completeTask(taskKey, "REJECT", dto.getComment(), auth.getName());
+        runAfterCommit(() -> {
+            if (request.getAlfrescoNodeId() != null) {
+                documentService.moveToRejected(request.getAlfrescoNodeId());
             }
+            logger.debug("Completing manager rejection after commit. taskId={} jobKey={}", task.getId(), task.getJobKey());
+            Map<String, Object> variables = new HashMap<>();
+            variables.put("decision", "REJECT");
+            if (dto.getComment() != null) {
+                variables.put("managerComment", dto.getComment());
+            }
+            camundaWorkflowService.completeTask(String.valueOf(task.getJobKey()), variables);
+            workflowTaskService.completeTask(task.getId(), auth.getName());
         });
+    }
+
+    private void runAfterCommit(Runnable action) {
+        if (TransactionSynchronizationManager.isSynchronizationActive()) {
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
+                public void afterCommit() {
+                    action.run();
+                }
+            });
+            return;
+        }
+        action.run();
     }
 
     private Authentication requireAuthenticatedWithRole(String requiredRole) {

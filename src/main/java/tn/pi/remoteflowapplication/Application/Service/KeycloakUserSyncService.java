@@ -53,20 +53,21 @@ public class KeycloakUserSyncService {
             return;
         }
         for (UserRepresentation ku : keycloakUsers) {
-            String externalId = ku.getId();
+            String keycloakId = ku.getId();
             String nom = ku.getLastName() != null ? ku.getLastName() : "Unknown";
             String prenom = ku.getFirstName() != null ? ku.getFirstName() : "Unknown";
-            String matricule = ku.getUsername() != null ? ku.getUsername() : externalId;
+            String username = ku.getUsername() != null ? ku.getUsername() : keycloakId;
             boolean actif = ku.isEnabled() != null ? ku.isEnabled() : true;
 
-            User user = userRepository.findByExternalId(externalId)
+            User user = userRepository.findByKeycloakId(keycloakId)
+                    .or(() -> userRepository.findByUsername(username))
                     .map(existing -> {
-                        existing.synchronizeIdentity(ku.getEmail(), nom, prenom, matricule, actif);
+                        existing.synchronizeIdentity(keycloakId, username, ku.getEmail(), nom, prenom, actif);
                         return existing;
                     })
-                    .orElseGet(() -> new User(externalId, ku.getEmail(), nom, prenom, matricule, actif));
+                    .orElseGet(() -> new User(keycloakId, ku.getEmail(), nom, prenom, username, actif));
 
-            List<String> userRoles = keycloakAuthService.getRealmRoles(externalId);
+            List<String> userRoles = keycloakAuthService.getRealmRoles(keycloakId);
             if (userRoles != null) {
                 user.getRoles().clear();
                 for (String roleName : userRoles) {
