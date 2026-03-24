@@ -123,8 +123,8 @@ class BpmnStructureValidationTest {
 
         // Verify gateway has outgoing flows
         Collection<SequenceFlow> outgoing = gateway.getOutgoing();
-        assertTrue(outgoing.size() >= 3,
-                "Gateway should have at least 3 outgoing flows (REJECT, APPROVE normal, APPROVE special)");
+        assertTrue(outgoing.size() >= 2,
+                "Gateway should have at least 2 outgoing flows (REJECT, APPROVE to HR)");
     }
 
     @Test
@@ -183,13 +183,9 @@ class BpmnStructureValidationTest {
         assertTrue(bpmnContent.contains("decision = \"REJECT\""),
                 "Gateway must check 'decision' variable for REJECT");
 
-        // Manager approve (normal case) condition
-        assertTrue(bpmnContent.contains("decision = \"APPROVE\" and specialCase = false"),
-                "Gateway must check 'decision' and 'specialCase' for normal approval");
-
-        // Manager approve (special case) condition
-        assertTrue(bpmnContent.contains("decision = \"APPROVE\" and specialCase = true"),
-                "Gateway must check 'decision' and 'specialCase' for special case");
+        // Manager approve condition (always routes to HR)
+        assertTrue(bpmnContent.contains("decision = \"APPROVE\""),
+                "Gateway must check 'decision' variable for APPROVE");
 
         // HR approve condition
         assertTrue(bpmnContent.contains("decision = \"APPROVE\""),
@@ -204,15 +200,11 @@ class BpmnStructureValidationTest {
         // Variables set by CamundaWorkflowService.startTeleworkProcess():
         // - requestId
         // - employeeId
-        // - specialCase
-
         // Variables set by approval handlers:
         // - decision
         // - comment
 
         // Verify these are referenced in BPMN
-        assertTrue(bpmnContent.contains("specialCase"),
-                "BPMN must reference 'specialCase' variable");
         assertTrue(bpmnContent.contains("decision"),
                 "BPMN must reference 'decision' variable");
 

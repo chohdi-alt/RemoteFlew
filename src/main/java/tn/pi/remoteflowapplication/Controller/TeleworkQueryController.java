@@ -42,7 +42,12 @@ public class TeleworkQueryController {
 
     @GetMapping("/telework/quota")
     @PreAuthorize("hasRole('EMPLOYEE')")
-    public TeleworkQuotaResponse getCurrentQuota(Authentication auth) {
+    public TeleworkQuotaResponse getCurrentQuota(
+            @RequestParam(required = false) @org.springframework.format.annotation.DateTimeFormat(iso = org.springframework.format.annotation.DateTimeFormat.ISO.DATE) java.time.LocalDate date,
+            Authentication auth) {
+        if (date != null) {
+            return teleworkQuotaService.getQuotaForDate(auth.getName(), date);
+        }
         return teleworkQuotaService.getCurrentWeekQuota(auth.getName());
     }
 

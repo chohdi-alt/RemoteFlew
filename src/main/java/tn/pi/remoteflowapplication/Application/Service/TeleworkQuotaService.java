@@ -25,8 +25,12 @@ public class TeleworkQuotaService {
     }
 
     public TeleworkQuotaResponse getCurrentWeekQuota(String employeeId) {
-        LocalDate today = LocalDate.now();
-        LocalDate weekStart = today.with(WEEK_FIELDS.dayOfWeek(), 1);
+        return getQuotaForDate(employeeId, LocalDate.now());
+    }
+
+    public TeleworkQuotaResponse getQuotaForDate(String employeeId, LocalDate referenceDate) {
+        LocalDate date = referenceDate != null ? referenceDate : LocalDate.now();
+        LocalDate weekStart = date.with(WEEK_FIELDS.dayOfWeek(), 1);
         LocalDate weekEnd = weekStart.plusDays(6);
         int maxDaysPerWeek = systemConfigurationService.getTeleworkMaxDaysPerWeek();
 

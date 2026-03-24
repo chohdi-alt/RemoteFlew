@@ -14,19 +14,15 @@
     <bpmn:exclusiveGateway id="Gateway_0zwg2ay">
       <bpmn:incoming>Flow_1gjzuno</bpmn:incoming>
       <bpmn:outgoing>Flow_1low42r</bpmn:outgoing>
-      <bpmn:outgoing>Flow_approve_direct</bpmn:outgoing>
       <bpmn:outgoing>Flow_0adtemg</bpmn:outgoing>
     </bpmn:exclusiveGateway>
     <bpmn:sequenceFlow id="Flow_0t4kiee" sourceRef="StartEvent_1" targetRef="Activity_1h9mlkf" />
     <bpmn:sequenceFlow id="Flow_1gjzuno" sourceRef="Activity_1h9mlkf" targetRef="Gateway_0zwg2ay" />
     <bpmn:sequenceFlow id="Flow_1low42r" sourceRef="Gateway_0zwg2ay" targetRef="Event_01w7ufk">
-      <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression"> = decision = "REJECT"</bpmn:conditionExpression>
-    </bpmn:sequenceFlow>
-    <bpmn:sequenceFlow id="Flow_approve_direct" sourceRef="Gateway_0zwg2ay" targetRef="Event_0y3caap">
-      <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression"> = decision = "APPROVE" and specialCase = false</bpmn:conditionExpression>
+      <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">= decision = "REJECT"</bpmn:conditionExpression>
     </bpmn:sequenceFlow>
     <bpmn:sequenceFlow id="Flow_0adtemg" sourceRef="Gateway_0zwg2ay" targetRef="Activity_040zhi1">
-      <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression"> = decision = "APPROVE" and specialCase = true</bpmn:conditionExpression>
+      <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">= decision = "APPROVE"</bpmn:conditionExpression>
     </bpmn:sequenceFlow>
     <bpmn:serviceTask id="Activity_040zhi1" name="HR Approval">
       <bpmn:extensionElements>
@@ -42,14 +38,13 @@
     </bpmn:exclusiveGateway>
     <bpmn:sequenceFlow id="Flow_1h9wu31" sourceRef="Activity_040zhi1" targetRef="Gateway_1n8jff6" />
     <bpmn:sequenceFlow id="Flow_0sa5q6z" sourceRef="Gateway_1n8jff6" targetRef="Event_0y3caap">
-      <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression"> = decision = "APPROVE"</bpmn:conditionExpression>
+      <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">= decision = "APPROVE"</bpmn:conditionExpression>
     </bpmn:sequenceFlow>
     <bpmn:sequenceFlow id="Flow_0e1w4jl" sourceRef="Gateway_1n8jff6" targetRef="Event_01w7ufk">
-      <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression"> = decision = "REJECT"</bpmn:conditionExpression>
+      <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">= decision = "REJECT"</bpmn:conditionExpression>
     </bpmn:sequenceFlow>
     <bpmn:endEvent id="Event_0y3caap" name="Approved">
       <bpmn:incoming>Flow_0sa5q6z</bpmn:incoming>
-      <bpmn:incoming>Flow_approve_direct</bpmn:incoming>
     </bpmn:endEvent>
     <bpmn:endEvent id="Event_01w7ufk" name="Rejected">
       <bpmn:incoming>Flow_1low42r</bpmn:incoming>
@@ -105,10 +100,6 @@
       </bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge id="Flow_0sa5q6z_di" bpmnElement="Flow_0sa5q6z">
         <di:waypoint x="865" y="210" />
-        <di:waypoint x="932" y="210" />
-      </bpmndi:BPMNEdge>
-      <bpmndi:BPMNEdge id="Flow_approve_direct_di" bpmnElement="Flow_approve_direct">
-        <di:waypoint x="600" y="210" />
         <di:waypoint x="932" y="210" />
       </bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge id="Flow_1low42r_di" bpmnElement="Flow_1low42r">

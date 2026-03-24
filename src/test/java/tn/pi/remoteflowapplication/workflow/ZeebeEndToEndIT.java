@@ -155,6 +155,46 @@ class ZeebeEndToEndIT {
         assertEquals(RequestStatus.APPROVED, request.getStatus());
     }
 
+    @Test
+    void endToEnd_normalCase_managerApprovalStillRoutesToHr() throws Exception {
+        authenticateAs("employee-1", "ROLE_EMPLOYEE");
+
+        CreateTeleworkDTO dto = new CreateTeleworkDTO(
+                LocalDate.of(2026, 3, 6),
+                LocalDate.of(2026, 3, 6),
+                "Need 1 day");
+
+        MultipartFile justificatif = new MockMultipartFile(
+                "file",
+                "justificatif.txt",
+                "text/plain",
+                "ok".getBytes());
+
+        Long requestId = createHandler.handle(dto, justificatif);
+
+        TaskEntity managerTask = waitForPendingTask(requestId, "MANAGER", Duration.ofSeconds(40));
+        authenticateAs("manager-1", "ROLE_MANAGER");
+        managerApprovalHandler.approve(
+                requestId,
+                String.valueOf(managerTask.getId()),
+                new ApprovalDecisionDTO(requestId, "manager-1", "ok"));
+
+        TaskEntity hrTask = waitForPendingTask(requestId, "HR", Duration.ofSeconds(40));
+        assertEquals(requestId, hrTask.getRequestId());
+
+        authenticateAs("hr-1", "ROLE_HR");
+        hrApprovalHandler.reject(
+                requestId,
+                String.valueOf(hrTask.getId()),
+                new ApprovalDecisionDTO(requestId, "hr-1", "not approved"));
+
+        waitForTaskStatus(managerTask.getId(), "COMPLETED", Duration.ofSeconds(20));
+        waitForTaskStatus(hrTask.getId(), "COMPLETED", Duration.ofSeconds(20));
+
+        TeleworkRequest request = teleworkRequestRepository.findById(requestId).orElseThrow();
+        assertEquals(RequestStatus.REJECTED, request.getStatus());
+    }
+
     private TaskEntity waitForPendingTask(Long requestId, String type, Duration timeout) throws InterruptedException {
         long deadline = System.currentTimeMillis() + timeout.toMillis();
         Optional<TaskEntity> task = Optional.empty();

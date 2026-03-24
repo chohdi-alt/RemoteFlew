@@ -69,8 +69,6 @@ public class CamundaWorkflowService implements WorkflowOrchestrationPort {
         completeTask(taskKey, variables);
     }
 
-
-
     private long parseTaskKey(String taskKey) {
         try {
             long key = Long.parseLong(taskKey);

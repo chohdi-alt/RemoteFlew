@@ -12,7 +12,6 @@ import tn.pi.remoteflowapplication.domain.entity.TaskEntity;
 import tn.pi.remoteflowapplication.application.port.out.WorkflowOrchestrationPort;
 import tn.pi.remoteflowapplication.application.service.DomainEventPublisher;
 import tn.pi.remoteflowapplication.domain.exception.BusinessException;
-import tn.pi.remoteflowapplication.domain.rule.QuotaValidationRule;
 import tn.pi.remoteflowapplication.domain.state.RequestStatus;
 import tn.pi.remoteflowapplication.application.port.out.TeleworkRequestRepository;
 import org.springframework.transaction.annotation.Transactional;
@@ -31,7 +30,6 @@ public class ManagerApprovalHandler {
     private final TeleworkRequestRepository repository;
     private final WorkflowOrchestrationPort camundaWorkflowService;
     private final WorkflowTaskService workflowTaskService;
-    private final QuotaValidationRule quotaValidationRule;
     private final DomainEventPublisher domainEventPublisher;
     private final DocumentStoragePort documentService;
 
@@ -39,13 +37,11 @@ public class ManagerApprovalHandler {
             TeleworkRequestRepository repository,
             WorkflowOrchestrationPort camundaWorkflowService,
             WorkflowTaskService workflowTaskService,
-            QuotaValidationRule quotaValidationRule,
             DomainEventPublisher domainEventPublisher,
             DocumentStoragePort documentService) {
         this.repository = repository;
         this.camundaWorkflowService = camundaWorkflowService;
         this.workflowTaskService = workflowTaskService;
-        this.quotaValidationRule = quotaValidationRule;
         this.domainEventPublisher = domainEventPublisher;
         this.documentService = documentService;
     }
@@ -60,8 +56,6 @@ public class ManagerApprovalHandler {
             throw new BusinessException("Request not ready for manager approval");
         }
 
-        final boolean specialCase = quotaValidationRule.isSpecialCase(request);
-
         if (request.getProcessInstanceId() == null || request.getProcessInstanceId().isBlank()) {
             throw new BusinessException("Cannot approve a request before the workflow process has started.");
         }
@@ -72,12 +66,8 @@ public class ManagerApprovalHandler {
                 requestId,
                 "MANAGER");
 
-        if (specialCase) {
-            request.markAsSpecial();
-        } else {
-            request.approve(dto.getComment());
-            request.recordApprovedAt(Instant.now());
-        }
+        // Manager approval moves the request to the HR validation stage.
+        request.markAsSpecial();
 
         request.recordManagerDecision(auth.getName(), Instant.now());
 
@@ -85,14 +75,10 @@ public class ManagerApprovalHandler {
         domainEventPublisher.publishEvents(request);
 
         runAfterCommit(() -> {
-            if (!specialCase && request.getAlfrescoNodeId() != null) {
-                documentService.moveToApproved(request.getAlfrescoNodeId());
-            }
-            logger.debug("Completing manager approval after commit. taskId={} jobKey={} specialCase={}",
-                    task.getId(), task.getJobKey(), specialCase);
+            logger.debug("Completing manager approval after commit. taskId={} jobKey={}",
+                    task.getId(), task.getJobKey());
             Map<String, Object> variables = new HashMap<>();
             variables.put("decision", "APPROVE");
-            variables.put("specialCase", specialCase);
             if (dto.getComment() != null) {
                 variables.put("managerComment", dto.getComment());
             }

@@ -19,7 +19,6 @@ import tn.pi.remoteflowapplication.application.service.WorkflowTaskService;
 import tn.pi.remoteflowapplication.application.port.out.WorkflowOrchestrationPort;
 import tn.pi.remoteflowapplication.domain.entity.TaskEntity;
 import tn.pi.remoteflowapplication.domain.entity.TeleworkRequest;
-import tn.pi.remoteflowapplication.domain.rule.QuotaValidationRule;
 
 import java.time.LocalDate;
 import java.util.Map;
@@ -33,7 +32,6 @@ class ManagerApprovalHandlerTest {
 
     private TeleworkRequestRepository repository;
     private WorkflowOrchestrationPort workflowService;
-    private QuotaValidationRule quotaValidationRule;
     private DomainEventPublisher domainEventPublisher;
     private DocumentStoragePort documentService;
     private WorkflowTaskService workflowTaskService;
@@ -43,11 +41,10 @@ class ManagerApprovalHandlerTest {
     void setUp() {
         repository = mock(TeleworkRequestRepository.class);
         workflowService = mock(WorkflowOrchestrationPort.class);
-        quotaValidationRule = mock(QuotaValidationRule.class);
         domainEventPublisher = mock(DomainEventPublisher.class);
         documentService = mock(DocumentStoragePort.class);
         workflowTaskService = mock(WorkflowTaskService.class);
-        handler = new ManagerApprovalHandler(repository, workflowService, workflowTaskService, quotaValidationRule, domainEventPublisher,
+        handler = new ManagerApprovalHandler(repository, workflowService, workflowTaskService, domainEventPublisher,
                 documentService);
 
         SecurityContextHolder.getContext().setAuthentication(
@@ -69,8 +66,6 @@ class ManagerApprovalHandlerTest {
             request.linkProcess("proc-1");
 
             when(repository.findById(1L)).thenReturn(Optional.of(request));
-            when(quotaValidationRule.isSpecialCase(request)).thenReturn(false);
-
             TaskEntity task = new TaskEntity();
             task.setId(10L);
             task.setJobKey(200L);
@@ -93,7 +88,6 @@ class ManagerApprovalHandlerTest {
             verify(workflowService).completeTask(eq("200"), varsCaptor.capture());
             Map<String, Object> vars = varsCaptor.getValue();
             assertEquals("APPROVE", vars.get("decision"));
-            assertEquals(false, vars.get("specialCase"));
             assertEquals("Approved", vars.get("managerComment"));
             verify(workflowTaskService).completeTask(10L, "manager-1");
         }
