@@ -28,7 +28,8 @@ class TeleworkRequestStateTransitionsTest {
                 LocalDate.now()
         );
 
-        request.approve("ok");
+        request.approveByManager("ok");
+        request.approveByHR("ok");
 
         assertEquals("APPROVED", request.getStatus().name());
     }
@@ -41,7 +42,7 @@ class TeleworkRequestStateTransitionsTest {
                 LocalDate.now()
         );
 
-        request.reject("no");
+        request.rejectByManager("no");
 
         assertEquals("REJECTED", request.getStatus().name());
     }
@@ -54,8 +55,8 @@ class TeleworkRequestStateTransitionsTest {
                 LocalDate.now().plusDays(2)
         );
         request.markAsSpecial();
-
-        request.approve("hr ok");
+        request.approveByManager("manager ok");
+        request.approveByHR("hr ok");
 
         assertEquals("APPROVED", request.getStatus().name());
     }

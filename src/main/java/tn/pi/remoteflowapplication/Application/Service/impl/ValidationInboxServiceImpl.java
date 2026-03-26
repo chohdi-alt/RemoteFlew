@@ -34,7 +34,7 @@ public class ValidationInboxServiceImpl implements ValidationInboxService {
     private final TeleworkRequestRepository teleworkRequestRepository;
     private final UserRepository userRepository;
     private final TeamRepository teamRepository;
-
+    
     public ValidationInboxServiceImpl(
             WorkflowTaskService workflowTaskService,
             TeleworkRequestRepository teleworkRequestRepository,
@@ -134,7 +134,12 @@ public class ValidationInboxServiceImpl implements ValidationInboxService {
                 request == null ? null : request.getStartDate(),
                 request == null ? null : request.getEndDate(),
                 request == null ? "SUBMITTED" : request.getStatus().name(),
-                String.valueOf(task.getId()));
+                String.valueOf(task.getId()),
+                request == null ? null : request.getJustificationReason(),
+                request == null || request.getAlfrescoNodeId() == null ? null : request.getAlfrescoNodeId().replace("workspace://SpacesStore/", ""),
+                request == null ? null : request.getManagerComment(),
+                request == null ? null : request.getHrComment()
+        );
     }
 
     private TeleworkRequest resolveRequest(TaskEntity task) {

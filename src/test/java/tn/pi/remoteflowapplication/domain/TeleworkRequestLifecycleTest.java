@@ -28,7 +28,8 @@ class TeleworkRequestLifecycleTest {
                 LocalDate.of(2026, 2, 2)
         );
 
-        request.approve("ok");
+        request.approveByManager("ok");
+        request.approveByHR("ok");
 
         assertEquals("APPROVED", request.getStatus().name());
     }
@@ -41,7 +42,7 @@ class TeleworkRequestLifecycleTest {
                 LocalDate.of(2026, 2, 2)
         );
 
-        request.reject("no");
+        request.rejectByManager("no");
 
         assertEquals("REJECTED", request.getStatus().name());
     }

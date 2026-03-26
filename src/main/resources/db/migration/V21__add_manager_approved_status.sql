@@ -1,0 +1,9 @@
+-- Add MANAGER_APPROVED to RequestStatus enum
+ALTER TABLE telework_requests
+MODIFY COLUMN state ENUM(
+    'SUBMITTED',
+    'APPROVED',
+    'REJECTED',
+    'SPECIAL',
+    'MANAGER_APPROVED'
+) NOT NULL DEFAULT 'SUBMITTED';

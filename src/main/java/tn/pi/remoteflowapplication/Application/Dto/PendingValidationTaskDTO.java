@@ -8,7 +8,11 @@ public record PendingValidationTaskDTO(
         LocalDate startDate,
         LocalDate endDate,
         String status,
-        String taskKey
+        String taskKey,
+        String justificationReason,
+        String justificatifFileId,
+        String managerComment,
+        String hrComment
 ) {
 }
 

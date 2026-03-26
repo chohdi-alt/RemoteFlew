@@ -94,4 +94,12 @@ public class TeleworkQueryController {
                 .contentLength(file.content().length)
                 .body(resource);
     }
+
+    @GetMapping("/telework/{id}/justificatif/view")
+    @PreAuthorize("hasAnyRole('MANAGER','HR','ADMIN','EMPLOYEE')")
+    public ResponseEntity<org.springframework.core.io.Resource> viewJustificatif(
+            @PathVariable Long id,
+            Authentication authentication) {
+        return queryService.viewJustificatif(id, authentication);
+    }
 }

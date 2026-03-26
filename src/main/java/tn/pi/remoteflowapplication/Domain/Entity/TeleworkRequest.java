@@ -60,6 +60,15 @@ public class TeleworkRequest extends DemandeTeletravail {
     @Column(name = "decision_comment")
     private String decisionComment;
 
+    @Column(name = "justification_reason", length = 500)
+    private String justificationReason;
+
+    @Column(name = "manager_comment", length = 500)
+    private String managerComment;
+
+    @Column(name = "hr_comment", length = 500)
+    private String hrComment;
+
     @Column(name = "process_instance_id")
     private String processInstanceId;
 
@@ -136,6 +145,9 @@ public class TeleworkRequest extends DemandeTeletravail {
     }
 
     public void attachJustificatif(String nodeId) {
+        if (nodeId != null && nodeId.startsWith("workspace://SpacesStore/")) {
+            nodeId = nodeId.substring("workspace://SpacesStore/".length());
+        }
         this.alfrescoNodeId = nodeId;
         if (nodeId != null && !nodeId.isBlank()) {
             addJustificatif(new Justificatif(
@@ -146,12 +158,50 @@ public class TeleworkRequest extends DemandeTeletravail {
         }
     }
 
-    public void approve(String comment) {
+    public void approveByManager(String comment) {
         if (this.status != RequestStatus.SUBMITTED && this.status != RequestStatus.SPECIAL) {
-            throw new IllegalStateException("Impossible d'approuver une demande a l'etat " + status);
+            throw new IllegalStateException("Impossible d'approuver (Manager) une demande a l'etat " + status);
+        }
+        this.status = RequestStatus.MANAGER_APPROVED;
+        if (comment != null && !comment.trim().isEmpty()) {
+            this.decisionComment = comment;
+            this.managerComment = comment;
+        }
+        this.managerDecisionAt = Instant.now();
+        if (getWorkflowInstance() != null) {
+            getWorkflowInstance().avancerWorkflow(this.status.name());
+        }
+    }
+
+    public void rejectByManager(String comment) {
+        if (this.status != RequestStatus.SUBMITTED && this.status != RequestStatus.SPECIAL) {
+            throw new IllegalStateException("Impossible de rejeter (Manager) une demande a l'etat " + status);
+        }
+        this.status = RequestStatus.REJECTED;
+        if (comment != null && !comment.trim().isEmpty()) {
+            this.decisionComment = comment;
+            this.managerComment = comment;
+        }
+        this.managerDecisionAt = Instant.now();
+        if (getWorkflowInstance() != null) {
+            getWorkflowInstance().avancerWorkflow(this.status.name());
+        }
+        registerEvent(new TeleworkRequestRejectedEvent(
+                this.id,
+                this.employeeId,
+                comment));
+    }
+
+    public void approveByHR(String comment) {
+        if (this.status != RequestStatus.MANAGER_APPROVED) {
+            throw new IllegalStateException("Impossible d'approuver (HR) une demande a l'etat " + status);
         }
         this.status = RequestStatus.APPROVED;
-        this.decisionComment = comment;
+        if (comment != null && !comment.trim().isEmpty()) {
+            this.decisionComment = comment;
+            this.hrComment = comment;
+        }
+        this.hrDecisionAt = Instant.now();
         if (getWorkflowInstance() != null) {
             getWorkflowInstance().avancerWorkflow(this.status.name());
         }
@@ -161,12 +211,16 @@ public class TeleworkRequest extends DemandeTeletravail {
                 comment));
     }
 
-    public void reject(String comment) {
-        if (this.status != RequestStatus.SUBMITTED && this.status != RequestStatus.SPECIAL) {
-            throw new IllegalStateException("Impossible de rejeter une demande a l'etat " + status);
+    public void rejectByHR(String comment) {
+        if (this.status != RequestStatus.MANAGER_APPROVED) {
+            throw new IllegalStateException("Impossible de rejeter (HR) une demande a l'etat " + status);
         }
         this.status = RequestStatus.REJECTED;
-        this.decisionComment = comment;
+        if (comment != null && !comment.trim().isEmpty()) {
+            this.decisionComment = comment;
+            this.hrComment = comment;
+        }
+        this.hrDecisionAt = Instant.now();
         if (getWorkflowInstance() != null) {
             getWorkflowInstance().avancerWorkflow(this.status.name());
         }
@@ -178,7 +232,6 @@ public class TeleworkRequest extends DemandeTeletravail {
 
     public void markAsSpecial() {
         this.status = RequestStatus.SPECIAL;
-        this.managerDecisionAt = Instant.now();
     }
 
     public void recordManagerDecision(String managerId, Instant decisionAt) {
@@ -205,7 +258,7 @@ public class TeleworkRequest extends DemandeTeletravail {
 
     @Override
     public void annulerDemande(String utilisateur) {
-        if (this.status == RequestStatus.SUBMITTED || this.status == RequestStatus.SPECIAL) {
+        if (this.status == RequestStatus.SUBMITTED || this.status == RequestStatus.SPECIAL || this.status == RequestStatus.MANAGER_APPROVED) {
             this.status = RequestStatus.REJECTED;
         }
     }
@@ -266,6 +319,22 @@ public class TeleworkRequest extends DemandeTeletravail {
 
     public Optional<String> getDecisionComment() {
         return Optional.ofNullable(decisionComment);
+    }
+
+    public String getJustificationReason() {
+        return justificationReason;
+    }
+
+    public void setJustificationReason(String justificationReason) {
+        this.justificationReason = justificationReason;
+    }
+
+    public String getManagerComment() {
+        return managerComment;
+    }
+
+    public String getHrComment() {
+        return hrComment;
     }
 
     public String getProcessInstanceId() {

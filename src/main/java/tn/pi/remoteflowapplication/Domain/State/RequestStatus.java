@@ -4,5 +4,6 @@ public enum RequestStatus {
     SUBMITTED,
     APPROVED,
     REJECTED,
-    SPECIAL
+    SPECIAL,
+    MANAGER_APPROVED
 }

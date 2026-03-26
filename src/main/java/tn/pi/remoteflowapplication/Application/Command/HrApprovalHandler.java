@@ -52,7 +52,7 @@ public class HrApprovalHandler {
         var request = repository.findById(requestId)
                 .orElseThrow(() -> new BusinessException("Request not found"));
 
-        if (request.getStatus() != RequestStatus.SPECIAL) {
+        if (request.getStatus() != RequestStatus.MANAGER_APPROVED) {
             throw new BusinessException("Request not ready for HR approval");
         }
 
@@ -65,7 +65,7 @@ public class HrApprovalHandler {
                 Long.valueOf(taskKey),
                 requestId,
                 "HR");
-        request.approve(dto.getComment());
+        request.approveByHR(dto.getComment());
         request.recordHrDecision(auth.getName(), Instant.now());
         request.recordApprovedAt(Instant.now());
 
@@ -93,7 +93,7 @@ public class HrApprovalHandler {
         var request = repository.findById(requestId)
                 .orElseThrow(() -> new BusinessException("Request not found"));
 
-        if (request.getStatus() != RequestStatus.SPECIAL) {
+        if (request.getStatus() != RequestStatus.MANAGER_APPROVED) {
             throw new BusinessException("Request not ready for HR approval");
         }
 
@@ -106,7 +106,7 @@ public class HrApprovalHandler {
                 Long.valueOf(taskKey),
                 requestId,
                 "HR");
-        request.reject(dto.getComment());
+        request.rejectByHR(dto.getComment());
         request.recordHrDecision(auth.getName(), Instant.now());
         request.recordRejectedAt(Instant.now());
 

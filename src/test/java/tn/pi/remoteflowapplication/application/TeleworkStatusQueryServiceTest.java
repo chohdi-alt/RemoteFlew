@@ -38,7 +38,7 @@ class TeleworkStatusQueryServiceTest {
 
         when(teleworkRequestRepository.findById(1L)).thenReturn(Optional.of(request));
 
-        TeleworkStatusQueryService service = new TeleworkStatusQueryService(teleworkRequestRepository, userRepository);
+        TeleworkStatusQueryService service = new TeleworkStatusQueryService(teleworkRequestRepository, userRepository, org.mockito.Mockito.mock(tn.pi.remoteflowapplication.application.port.out.DocumentStoragePort.class));
         var auth = new UsernamePasswordAuthenticationToken(
                 "emp-1",
                 "n/a",
@@ -58,7 +58,7 @@ class TeleworkStatusQueryServiceTest {
 
         when(teleworkRequestRepository.findById(1L)).thenReturn(Optional.of(request));
 
-        TeleworkStatusQueryService service = new TeleworkStatusQueryService(teleworkRequestRepository, userRepository);
+        TeleworkStatusQueryService service = new TeleworkStatusQueryService(teleworkRequestRepository, userRepository, org.mockito.Mockito.mock(tn.pi.remoteflowapplication.application.port.out.DocumentStoragePort.class));
         var auth = new UsernamePasswordAuthenticationToken(
                 "emp-2",
                 "n/a",
@@ -76,7 +76,7 @@ class TeleworkStatusQueryServiceTest {
 
         when(teleworkRequestRepository.findById(1L)).thenReturn(Optional.of(request));
 
-        TeleworkStatusQueryService service = new TeleworkStatusQueryService(teleworkRequestRepository, userRepository);
+        TeleworkStatusQueryService service = new TeleworkStatusQueryService(teleworkRequestRepository, userRepository, org.mockito.Mockito.mock(tn.pi.remoteflowapplication.application.port.out.DocumentStoragePort.class));
         var auth = new UsernamePasswordAuthenticationToken(
                 "manager-1",
                 "n/a",

@@ -67,9 +67,9 @@ public class ManagerApprovalHandler {
                 "MANAGER");
 
         // Manager approval moves the request to the HR validation stage.
-        request.markAsSpecial();
+        request.approveByManager(dto.getComment());
 
-        request.recordManagerDecision(auth.getName(), Instant.now());
+        request.recordManagerDecision(auth.getName(), null);
 
         repository.save(request);
         domainEventPublisher.publishEvents(request);
@@ -107,7 +107,7 @@ public class ManagerApprovalHandler {
                 requestId,
                 "MANAGER");
 
-        request.reject(dto.getComment());
+        request.rejectByManager(dto.getComment());
         request.recordManagerDecision(auth.getName(), Instant.now());
         request.recordRejectedAt(Instant.now());
 

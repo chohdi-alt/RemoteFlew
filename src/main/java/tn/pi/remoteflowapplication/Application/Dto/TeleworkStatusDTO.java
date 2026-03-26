@@ -10,6 +10,11 @@ public class TeleworkStatusDTO {
     private String status;
     private String decisionComment;
     private boolean specialCase;
+    
+    private String justificationReason;
+    private String justificatifFileId;
+    private String managerComment;
+    private String hrComment;
 
     public TeleworkStatusDTO() {
     }
@@ -20,7 +25,11 @@ public class TeleworkStatusDTO {
             LocalDate endDate,
             String status,
             String decisionComment,
-            boolean specialCase
+            boolean specialCase,
+            String justificationReason,
+            String justificatifFileId,
+            String managerComment,
+            String hrComment
     ) {
         this.requestId = requestId;
         this.startDate = startDate;
@@ -28,6 +37,10 @@ public class TeleworkStatusDTO {
         this.status = status;
         this.decisionComment = decisionComment;
         this.specialCase = specialCase;
+        this.justificationReason = justificationReason;
+        this.justificatifFileId = justificatifFileId;
+        this.managerComment = managerComment;
+        this.hrComment = hrComment;
     }
 
     public Long getRequestId() {
@@ -52,5 +65,21 @@ public class TeleworkStatusDTO {
 
     public boolean isSpecialCase() {
         return specialCase;
+    }
+
+    public String getJustificationReason() {
+        return justificationReason;
+    }
+
+    public String getJustificatifFileId() {
+        return justificatifFileId;
+    }
+
+    public String getManagerComment() {
+        return managerComment;
+    }
+
+    public String getHrComment() {
+        return hrComment;
     }
 }

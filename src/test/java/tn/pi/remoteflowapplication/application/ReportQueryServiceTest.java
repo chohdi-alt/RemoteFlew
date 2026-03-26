@@ -31,10 +31,11 @@ class ReportQueryServiceTest {
     @SuppressWarnings("unchecked")
     void generateReportCalculatesStatisticsCorrectly() {
         TeleworkRequest req1 = TeleworkRequest.create("emp-1", LocalDate.now(), LocalDate.now());
-        req1.approve("ok");
+        req1.approveByManager("manager ok");
+        req1.approveByHR("ok");
 
         TeleworkRequest req2 = TeleworkRequest.create("emp-2", LocalDate.now(), LocalDate.now());
-        req2.reject("no");
+        req2.rejectByManager("no");
 
         when(repository.findAll()).thenReturn(List.of(req1, req2));
 

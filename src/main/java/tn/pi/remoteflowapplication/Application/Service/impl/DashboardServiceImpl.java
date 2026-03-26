@@ -134,7 +134,11 @@ public class DashboardServiceImpl implements DashboardService {
                 request.getEndDate(),
                 request.getStatus().name(),
                 request.getDecisionComment().orElse(null),
-                request.getStatus() == RequestStatus.SPECIAL);
+                request.getStatus() == RequestStatus.SPECIAL,
+                request.getJustificationReason(),
+                request.getAlfrescoNodeId() != null ? request.getAlfrescoNodeId().replace("workspace://SpacesStore/", "") : null,
+                request.getManagerComment(),
+                request.getHrComment());
     }
 
     private Map<RequestStatus, Long> toStatusMap(List<StatusCountProjection> projections) {

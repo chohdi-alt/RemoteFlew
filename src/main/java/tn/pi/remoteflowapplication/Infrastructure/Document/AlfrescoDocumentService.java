@@ -16,7 +16,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.function.Supplier;
 import org.springframework.web.client.HttpStatusCodeException;
+import lombok.extern.slf4j.Slf4j;
 
+@Slf4j
 @Service
 public class AlfrescoDocumentService implements DocumentStoragePort {
     private static final String WORKSPACE_NODE_REF_PREFIX = "workspace://SpacesStore/";
@@ -41,50 +43,17 @@ public class AlfrescoDocumentService implements DocumentStoragePort {
 
     private final RestTemplate restTemplate;
 
-    private String ticket;
-
     public AlfrescoDocumentService(RestTemplate alfrescoRestTemplate) {
+        org.springframework.http.client.SimpleClientHttpRequestFactory factory = new org.springframework.http.client.SimpleClientHttpRequestFactory();
+        factory.setConnectTimeout(5000);
+        factory.setReadTimeout(10000);
+        alfrescoRestTemplate.setRequestFactory(factory);
         this.restTemplate = alfrescoRestTemplate;
-    }
-
-    /*
-     * ======================
-     * AUTHENTICATION
-     * ======================
-     */
-
-    private synchronized String getTicket() {
-        if (ticket == null) {
-            authenticate();
-        }
-        return ticket;
-    }
-
-    private void authenticate() {
-        String url = baseUrl + "/api/-default-/public/authentication/versions/1/tickets";
-
-        Map<String, String> body = Map.of(
-                "userId", username,
-                "password", password);
-
-        HttpHeaders headers = new HttpHeaders();
-        headers.setContentType(MediaType.APPLICATION_JSON);
-
-        HttpEntity<Map<String, String>> request = new HttpEntity<>(body, headers);
-
-        ParameterizedTypeReference<Map<String, Object>> typeRef = new ParameterizedTypeReference<>() {
-        };
-        ResponseEntity<Map<String, Object>> response = restTemplate.exchange(url, HttpMethod.POST, request, typeRef);
-
-        Map<String, Object> bodyResponse = response.getBody();
-        if (bodyResponse != null && bodyResponse.get("entry") instanceof Map<?, ?> entry) {
-            ticket = (String) entry.get("id");
-        }
     }
 
     private HttpHeaders authHeaders() {
         HttpHeaders headers = new HttpHeaders();
-        headers.setBasicAuth(username, getTicket());
+        headers.setBasicAuth(username, password);
         return headers;
     }
 
@@ -103,17 +72,17 @@ public class AlfrescoDocumentService implements DocumentStoragePort {
         final byte[] bytes = file.getBytes();
         final String filename = file.getOriginalFilename();
 
-        return executeWithRetry(() -> {
+        log.info("Calling Alfresco [UPLOAD]: {} | Method: POST", url);
+        try {
             MultiValueMap<String, Object> body = new LinkedMultiValueMap<>();
-            body.add("file", new ByteArrayResource(bytes) {
+            body.add("filedata", new ByteArrayResource(bytes) {
                 @Override
                 public String getFilename() {
                     return filename;
                 }
             });
 
-            HttpHeaders headers = new HttpHeaders();
-            headers.setBasicAuth(username, getTicket());
+            HttpHeaders headers = authHeaders();
             headers.setContentType(MediaType.MULTIPART_FORM_DATA);
 
             HttpEntity<MultiValueMap<String, Object>> request = new HttpEntity<>(body, headers);
@@ -122,12 +91,19 @@ public class AlfrescoDocumentService implements DocumentStoragePort {
             ResponseEntity<Map<String, Object>> response = restTemplate.exchange(url, HttpMethod.POST, request,
                     typeRef);
 
+            log.info("Alfresco response status: {}", response.getStatusCode());
             Map<String, Object> bodyResponse = response.getBody();
             if (bodyResponse != null && bodyResponse.get("entry") instanceof Map<?, ?> entry) {
                 return (String) entry.get("id"); // Alfresco nodeId
             }
             return null;
-        });
+        } catch (HttpStatusCodeException e) {
+            log.error("Alfresco error ({}): {}", e.getStatusCode(), e.getResponseBodyAsString());
+            return null;
+        } catch (Exception e) {
+            log.error("Alfresco error during upload to {}", url, e);
+            return null;
+        }
     }
 
     @Override
@@ -141,25 +117,34 @@ public class AlfrescoDocumentService implements DocumentStoragePort {
         String url = baseUrl + "/api/-default-/public/alfresco/versions/1/nodes/"
                 + normalizedNodeId + "/content";
 
-        return executeWithRetry(() -> {
-            HttpHeaders headers = new HttpHeaders();
-            headers.setBasicAuth(username, getTicket());
+        log.info("Calling Alfresco [DOWNLOAD]: {} | Method: GET", url);
+        try {
+            HttpHeaders headers = authHeaders();
             HttpEntity<Void> request = new HttpEntity<>(headers);
             ResponseEntity<byte[]> response = restTemplate.exchange(url, HttpMethod.GET, request, byte[].class);
+            log.info("Alfresco response status: {}", response.getStatusCode());
             return response.getBody();
-        });
+        } catch (HttpStatusCodeException e) {
+            log.error("Alfresco error ({}): {}", e.getStatusCode(), e.getResponseBodyAsString());
+            throw new tn.pi.remoteflowapplication.domain.exception.BusinessException("Document unavailable");
+        } catch (Exception e) {
+            log.error("Alfresco error during download from {}", url, e);
+            throw new tn.pi.remoteflowapplication.domain.exception.BusinessException("Document unavailable");
+        }
     }
 
     public String getParentId(String nodeId) {
         String normalizedNodeId = normalizeNodeId(nodeId);
         String url = baseUrl + "/api/-default-/public/alfresco/versions/1/nodes/" + normalizedNodeId;
 
-        return executeWithRetry(() -> {
+        log.info("Calling Alfresco [GET_PARENT]: {} | Method: GET", url);
+        try {
             HttpEntity<Void> request = new HttpEntity<>(authHeaders());
             ParameterizedTypeReference<Map<String, Object>> typeRef = new ParameterizedTypeReference<>() {
             };
             ResponseEntity<Map<String, Object>> response = restTemplate.exchange(url, HttpMethod.GET, request, typeRef);
 
+            log.info("Alfresco response status: {}", response.getStatusCode());
             Map<String, Object> bodyResponse = response.getBody();
             if (bodyResponse != null && bodyResponse.get("entry") instanceof Map<?, ?> entry) {
                 Object parentId = entry.get("parentId");
@@ -181,7 +166,13 @@ public class AlfrescoDocumentService implements DocumentStoragePort {
                 }
             }
             return null;
-        });
+        } catch (HttpStatusCodeException e) {
+            log.error("Alfresco error ({}): {}", e.getStatusCode(), e.getResponseBodyAsString());
+            return null;
+        } catch (Exception e) {
+            log.error("Alfresco error during getParentId for {}", url, e);
+            return null;
+        }
     }
 
     public void move(String nodeId, String targetFolderId) {
@@ -190,13 +181,21 @@ public class AlfrescoDocumentService implements DocumentStoragePort {
         }
         String normalizedNodeId = normalizeNodeId(nodeId);
         String normalizedTargetFolderId = normalizeNodeId(targetFolderId);
-        String url = baseUrl + "/api/-default-/public/alfresco/versions/1/nodes/" + normalizedNodeId;
-        Map<String, String> body = Map.of("parentId", normalizedTargetFolderId);
+        String url = baseUrl + "/api/-default-/public/alfresco/versions/1/nodes/" + normalizedNodeId + "/move";
+        Map<String, String> body = Map.of("targetParentId", normalizedTargetFolderId);
 
-        executeWithRetry(() -> {
+        log.info("Calling Alfresco [MOVE]: {} | Method: POST", url);
+        try {
             HttpEntity<Map<String, String>> request = new HttpEntity<>(body, authHeaders());
-            return restTemplate.exchange(url, HttpMethod.PUT, request, Void.class);
-        });
+            ResponseEntity<Map<String, Object>> response = restTemplate.exchange(url, HttpMethod.POST, request,
+                    new ParameterizedTypeReference<Map<String, Object>>() {
+                    });
+            log.info("Alfresco response status: {}", response.getStatusCode());
+        } catch (HttpStatusCodeException e) {
+            log.error("Alfresco error ({}): {}", e.getStatusCode(), e.getResponseBodyAsString());
+        } catch (Exception e) {
+            log.error("Alfresco error during move for {}", url, e);
+        }
     }
 
     @Override
@@ -209,24 +208,6 @@ public class AlfrescoDocumentService implements DocumentStoragePort {
         move(nodeId, rejectedFolderId);
     }
 
-    /**
-     * Fix Defect 4: Implement retry logic on 401 Unauthorized.
-     * Safely refreshes the ticket and retries the operation once.
-     */
-    private <T> T executeWithRetry(Supplier<T> operation) {
-        try {
-            return operation.get();
-        } catch (HttpStatusCodeException ex) {
-            if (ex.getStatusCode() == HttpStatus.UNAUTHORIZED) {
-                synchronized (this) {
-                    ticket = null; // Invalidate cached ticket
-                    authenticate();
-                }
-                return operation.get(); // Retry once
-            }
-            throw ex;
-        }
-    }
 
     private String normalizeNodeId(String nodeIdOrNodeRef) {
         if (nodeIdOrNodeRef == null) {
