@@ -41,6 +41,9 @@ public class AlfrescoDocumentService implements DocumentStoragePort {
     @Value("${alfresco.rejected-folder-id}")
     private String rejectedFolderId;
 
+    @Value("${alfresco.archive-folder-id}")
+    private String archiveFolderId;
+
     private final RestTemplate restTemplate;
 
     public AlfrescoDocumentService(RestTemplate alfrescoRestTemplate) {
@@ -112,20 +115,60 @@ public class AlfrescoDocumentService implements DocumentStoragePort {
     }
 
     @Override
+    public String uploadFileFromStream(String filename, byte[] content, String parentNodeId) throws IOException {
+        String normalizedParentNodeId = normalizeNodeId(parentNodeId);
+        String url = baseUrl + "/api/-default-/public/alfresco/versions/1/nodes/"
+                + normalizedParentNodeId + "/children";
+
+        log.info("Calling Alfresco [UPLOAD_STREAM]: {} | Method: POST", url);
+        try {
+            MultiValueMap<String, Object> body = new LinkedMultiValueMap<>();
+            body.add("filedata", new ByteArrayResource(content) {
+                @Override
+                public String getFilename() {
+                    return filename;
+                }
+            });
+
+            HttpHeaders headers = authHeaders();
+            headers.setContentType(MediaType.MULTIPART_FORM_DATA);
+
+            HttpEntity<MultiValueMap<String, Object>> request = new HttpEntity<>(body, headers);
+            ParameterizedTypeReference<Map<String, Object>> typeRef = new ParameterizedTypeReference<>() {
+            };
+            ResponseEntity<Map<String, Object>> response = restTemplate.exchange(url, HttpMethod.POST, request,
+                    typeRef);
+
+            log.info("Alfresco response status: {}", response.getStatusCode());
+            Map<String, Object> bodyResponse = response.getBody();
+            if (bodyResponse != null && bodyResponse.get("entry") instanceof Map<?, ?> entry) {
+                return (String) entry.get("id"); // Alfresco nodeId
+            }
+            return null;
+        } catch (HttpStatusCodeException e) {
+            log.error("Alfresco error ({}): {}", e.getStatusCode(), e.getResponseBodyAsString());
+            return null;
+        } catch (Exception e) {
+            log.error("Alfresco error during stream upload to {}", url, e);
+            return null;
+        }
+    }
+
+    @Override
     public byte[] download(String nodeId) {
         String normalizedNodeId = normalizeNodeId(nodeId);
         String url = baseUrl + "/api/-default-/public/alfresco/versions/1/nodes/"
                 + normalizedNodeId + "/content";
 
-        log.info("Calling Alfresco [DOWNLOAD]: {} | Method: GET", url);
+        log.info("[ARCHIVE_DOWNLOAD] nodeId={} url={}", normalizedNodeId, url);
         try {
             HttpHeaders headers = authHeaders();
             HttpEntity<Void> request = new HttpEntity<>(headers);
             ResponseEntity<byte[]> response = restTemplate.exchange(url, HttpMethod.GET, request, byte[].class);
-            log.info("Alfresco response status: {}", response.getStatusCode());
+            log.info("[ALFRESCO_RESPONSE] status={} nodeId={}", response.getStatusCode(), normalizedNodeId);
             return response.getBody();
         } catch (HttpStatusCodeException e) {
-            log.error("Alfresco error ({}): {}", e.getStatusCode(), e.getResponseBodyAsString());
+            log.error("[ALFRESCO_RESPONSE] status={} nodeId={} body={}", e.getStatusCode(), normalizedNodeId, e.getResponseBodyAsString());
             throw new tn.pi.remoteflowapplication.domain.exception.BusinessException("Document unavailable");
         } catch (Exception e) {
             log.error("Alfresco error during download from {}", url, e);

@@ -2,8 +2,10 @@ package tn.pi.remoteflowapplication.infrastructure.persistence;
 
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
+import org.springframework.transaction.annotation.Transactional;
 import tn.pi.remoteflowapplication.domain.entity.TeleworkRequest;
 import tn.pi.remoteflowapplication.infrastructure.persistence.projection.MonthlyCountProjection;
 import tn.pi.remoteflowapplication.infrastructure.persistence.projection.StatusCountProjection;
@@ -76,6 +78,11 @@ public interface SpringTeleworkJpaRepository
                         where r.submittedAt is not null and (r.approvedAt is not null or r.rejectedAt is not null)
                         """)
         Double averageTotalCycleTime();
+
+        @Modifying(clearAutomatically = true, flushAutomatically = true)
+        @Transactional
+        @Query("UPDATE TeleworkRequest r SET r.archiveNodeId = :nodeId WHERE r.id = :id")
+        int updateArchiveNodeId(@Param("id") Long id, @Param("nodeId") String nodeId);
 
         @Query("""
                         select count(r)

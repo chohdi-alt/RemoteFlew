@@ -1,33 +1,24 @@
 package tn.pi.remoteflowapplication.application.dto;
 
+import com.fasterxml.jackson.annotation.JsonAlias;
+
 public class ApprovalDecisionDTO {
 
-    private Long requestId;
-    private String managerId;
+    @JsonAlias({"hrComment", "managerComment"})
     private String comment;
 
     public ApprovalDecisionDTO() {
     }
 
-    public ApprovalDecisionDTO(
-            Long requestId,
-            String managerId,
-            String comment
-    ) {
-        this.requestId = requestId;
-        this.managerId = managerId;
+    public ApprovalDecisionDTO(String comment) {
         this.comment = comment;
-    }
-
-    public Long getRequestId() {
-        return requestId;
-    }
-
-    public String getManagerId() {
-        return managerId;
     }
 
     public String getComment() {
         return comment;
+    }
+
+    public void setComment(String comment) {
+        this.comment = comment;
     }
 }

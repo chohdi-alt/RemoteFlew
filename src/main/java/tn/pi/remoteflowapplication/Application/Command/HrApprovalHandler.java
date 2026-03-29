@@ -7,6 +7,7 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Component;
 import tn.pi.remoteflowapplication.application.dto.ApprovalDecisionDTO;
 import tn.pi.remoteflowapplication.application.port.out.DocumentStoragePort;
+import tn.pi.remoteflowapplication.application.service.ArchiveService;
 import tn.pi.remoteflowapplication.application.service.WorkflowTaskService;
 import tn.pi.remoteflowapplication.domain.entity.TaskEntity;
 import tn.pi.remoteflowapplication.application.port.out.WorkflowOrchestrationPort;
@@ -32,18 +33,21 @@ public class HrApprovalHandler {
     private final WorkflowTaskService workflowTaskService;
     private final DocumentStoragePort documentService;
     private final DomainEventPublisher domainEventPublisher;
+    private final ArchiveService archiveService;
 
     public HrApprovalHandler(
             TeleworkRequestRepository repository,
             WorkflowOrchestrationPort camundaWorkflowService,
             WorkflowTaskService workflowTaskService,
             DomainEventPublisher domainEventPublisher,
-            DocumentStoragePort documentService) {
+            DocumentStoragePort documentService,
+            ArchiveService archiveService) {
         this.repository = repository;
         this.camundaWorkflowService = camundaWorkflowService;
         this.workflowTaskService = workflowTaskService;
         this.domainEventPublisher = domainEventPublisher;
         this.documentService = documentService;
+        this.archiveService = archiveService;
     }
 
     @Transactional
@@ -71,19 +75,44 @@ public class HrApprovalHandler {
 
         repository.save(request);
         domainEventPublisher.publishEvents(request);
+        final Long archiveRequestId = request.getId();
 
         runAfterCommit(() -> {
+            // 1. Move justificatif first (important but internal)
             if (request.getAlfrescoNodeId() != null) {
-                documentService.moveToApproved(request.getAlfrescoNodeId());
+                try {
+                    documentService.moveToApproved(request.getAlfrescoNodeId());
+                } catch (Exception e) {
+                    logger.error("❌ Justificatif move failed (non-blocking)", e);
+                }
             }
-            logger.debug("Completing HR approval after commit. taskId={} jobKey={}", task.getId(), task.getJobKey());
-            Map<String, Object> variables = new HashMap<>();
-            variables.put("decision", "APPROVE");
-            if (dto.getComment() != null) {
-                variables.put("managerComment", dto.getComment());
+
+            // 2. CRITICAL PATH — Complete workflow task first
+            try {
+                Map<String, Object> variables = new HashMap<>();
+                variables.put("decision", "APPROVE");
+                variables.put("hrComment", dto.getComment()); // Refactored: Use hrComment for HR stage
+
+                // Complete Zeebe Task
+                camundaWorkflowService.completeTask(String.valueOf(task.getJobKey()), variables);
+                // Mark Task as Completed in DB
+                workflowTaskService.completeTask(task.getId(), auth.getName());
+                
+                logger.info("✅ HR approval workflow task completed. requestId={} taskId={}", requestId, task.getId());
+            } catch (Exception e) {
+                logger.error("❌ CRITICAL: Workflow task completion failed", e);
+                throw e; // Fail loudly here as workflow integrity is critical
             }
-            camundaWorkflowService.completeTask(String.valueOf(task.getJobKey()), variables);
-            workflowTaskService.completeTask(task.getId(), auth.getName());
+
+            // 3. NON-CRITICAL PATH — Trigger archive (Non-blocking)
+            if (request.getArchiveNodeId() == null) {
+                try {
+                    logger.error("[ARCHIVE_TRIGGERED] requestId={}", requestId);
+                    archiveService.processArchive(archiveRequestId);
+                } catch (Exception e) {
+                    logger.error("❌ [ARCHIVE_FAILED] (NON-BLOCKING) requestId={} | Error: {}", requestId, e.getMessage());
+                }
+            }
         });
     }
 
@@ -112,19 +141,42 @@ public class HrApprovalHandler {
 
         repository.save(request);
         domainEventPublisher.publishEvents(request);
+        final Long archiveRequestId = request.getId();
 
         runAfterCommit(() -> {
+            // 1. Move justificatif to rejected folder
             if (request.getAlfrescoNodeId() != null) {
-                documentService.moveToRejected(request.getAlfrescoNodeId());
+                try {
+                    documentService.moveToRejected(request.getAlfrescoNodeId());
+                } catch (Exception e) {
+                    logger.error("❌ Justificatif move failed (non-blocking)", e);
+                }
             }
-            logger.debug("Completing HR rejection after commit. taskId={} jobKey={}", task.getId(), task.getJobKey());
-            Map<String, Object> variables = new HashMap<>();
-            variables.put("decision", "REJECT");
-            if (dto.getComment() != null) {
-                variables.put("managerComment", dto.getComment());
+
+            // 2. CRITICAL PATH — Complete workflow task first
+            try {
+                Map<String, Object> variables = new HashMap<>();
+                variables.put("decision", "REJECT");
+                variables.put("hrComment", dto.getComment()); // Fixed naming
+
+                camundaWorkflowService.completeTask(String.valueOf(task.getJobKey()), variables);
+                workflowTaskService.completeTask(task.getId(), auth.getName());
+                
+                logger.info("✅ HR rejection workflow task completed. requestId={} taskId={}", requestId, task.getId());
+            } catch (Exception e) {
+                logger.error("❌ CRITICAL: Workflow task completion failed", e);
+                throw e;
             }
-            camundaWorkflowService.completeTask(String.valueOf(task.getJobKey()), variables);
-            workflowTaskService.completeTask(task.getId(), auth.getName());
+
+            // 3. NON-CRITICAL PATH — Trigger archive
+            if (request.getArchiveNodeId() == null) {
+                try {
+                    logger.error("[ARCHIVE_TRIGGERED] requestId={}", requestId);
+                    archiveService.processArchive(archiveRequestId);
+                } catch (Exception e) {
+                    logger.error("❌ [ARCHIVE_FAILED] (NON-BLOCKING) requestId={} | Error: {}", requestId, e.getMessage());
+                }
+            }
         });
     }
 

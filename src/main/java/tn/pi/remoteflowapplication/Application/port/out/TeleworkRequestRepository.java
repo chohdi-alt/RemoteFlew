@@ -28,4 +28,15 @@ public interface TeleworkRequestRepository {
     void deleteById(Long id);
 
     void deleteAll();
+
+    List<TeleworkRequest> findArchivedRequests();
+
+    /**
+     * Partial update: sets archiveNodeId directly via UPDATE query.
+     * Avoids entity merge/cascade issues when called outside a transaction
+     * (e.g. from afterCommit callbacks with detached entities).
+     *
+     * @return number of rows updated (0 or 1)
+     */
+    int updateArchiveNodeId(Long requestId, String archiveNodeId);
 }

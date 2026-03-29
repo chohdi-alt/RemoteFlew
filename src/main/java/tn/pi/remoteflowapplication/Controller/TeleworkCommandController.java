@@ -62,11 +62,6 @@ public class TeleworkCommandController {
             @PathVariable("id") Long requestId,
             @RequestParam("taskKey") String taskKey,
             @RequestBody @Valid ApprovalDecisionDTO dto) {
-        if (dto.getRequestId() != null && !dto.getRequestId().equals(requestId)) {
-            // Ensure path/body correlation to prevent taskKey misuse.
-            throw new org.springframework.web.server.ResponseStatusException(
-                    org.springframework.http.HttpStatus.BAD_REQUEST, "Request id mismatch.");
-        }
         managerApprovalHandler.approve(requestId, taskKey, dto);
     }
 
@@ -76,11 +71,6 @@ public class TeleworkCommandController {
             @PathVariable("id") Long requestId,
             @RequestParam("taskKey") String taskKey,
             @RequestBody @Valid ApprovalDecisionDTO dto) {
-        if (dto.getRequestId() != null && !dto.getRequestId().equals(requestId)) {
-            // Ensure path/body correlation to prevent taskKey misuse.
-            throw new org.springframework.web.server.ResponseStatusException(
-                    org.springframework.http.HttpStatus.BAD_REQUEST, "Request id mismatch.");
-        }
         managerApprovalHandler.reject(requestId, taskKey, dto);
     }
 
@@ -90,11 +80,6 @@ public class TeleworkCommandController {
             @PathVariable("id") Long requestId,
             @RequestParam("taskKey") String taskKey,
             @RequestBody @Valid ApprovalDecisionDTO dto) {
-        if (dto.getRequestId() != null && !dto.getRequestId().equals(requestId)) {
-            // Ensure path/body correlation to prevent taskKey misuse.
-            throw new org.springframework.web.server.ResponseStatusException(
-                    org.springframework.http.HttpStatus.BAD_REQUEST, "Request id mismatch.");
-        }
         hrApprovalHandler.approve(requestId, taskKey, dto);
     }
 
@@ -104,11 +89,6 @@ public class TeleworkCommandController {
             @PathVariable("id") Long requestId,
             @RequestParam("taskKey") String taskKey,
             @RequestBody @Valid ApprovalDecisionDTO dto) {
-        if (dto.getRequestId() != null && !dto.getRequestId().equals(requestId)) {
-            // Ensure path/body correlation to prevent taskKey misuse.
-            throw new org.springframework.web.server.ResponseStatusException(
-                    org.springframework.http.HttpStatus.BAD_REQUEST, "Request id mismatch.");
-        }
         hrApprovalHandler.reject(requestId, taskKey, dto);
     }
 }

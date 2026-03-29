@@ -13,4 +13,6 @@ public interface DocumentStoragePort {
     void moveToApproved(String nodeId);
 
     void moveToRejected(String nodeId);
+
+    String uploadFileFromStream(String filename, byte[] content, String parentNodeId) throws IOException;
 }

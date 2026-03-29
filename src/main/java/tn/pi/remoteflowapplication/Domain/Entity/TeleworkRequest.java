@@ -52,9 +52,11 @@ public class TeleworkRequest extends DemandeTeletravail {
 
     @Column(name = "agreement_node_id")
     private String agreementNodeId;
+    @Column(name = "archive_node_id")
+    private String archiveNodeId;
 
     @Enumerated(EnumType.STRING)
-    @Column(name = "state", nullable = false, columnDefinition = "ENUM('SUBMITTED', 'APPROVED', 'REJECTED', 'SPECIAL')")
+    @Column(name = "state", nullable = false, columnDefinition = "ENUM('SUBMITTED', 'MANAGER_APPROVED', 'APPROVED', 'REJECTED', 'SPECIAL')")
     private RequestStatus status;
 
     @Column(name = "decision_comment")
@@ -315,6 +317,14 @@ public class TeleworkRequest extends DemandeTeletravail {
 
     public void linkAgreementNode(String agreementNodeId) {
         this.agreementNodeId = agreementNodeId;
+    }
+
+    public String getArchiveNodeId() {
+        return archiveNodeId;
+    }
+
+    public void setArchiveNodeId(String archiveNodeId) {
+        this.archiveNodeId = archiveNodeId;
     }
 
     public Optional<String> getDecisionComment() {
