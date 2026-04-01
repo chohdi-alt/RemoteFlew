@@ -11,6 +11,9 @@ public class User extends Utilisateur {
     @Column(name = "keycloak_id", unique = true, nullable = false, updatable = false)
     private String keycloakId;
 
+    @Column(name = "external_id", unique = true, nullable = false)
+    private String externalId;
+
     @Column(name = "username", unique = true, nullable = false)
     private String username;
 
@@ -31,6 +34,7 @@ public class User extends Utilisateur {
     public User(String keycloakId, String username, String fullName, String email) {
         super(email, extractNom(fullName), extractPrenom(fullName), username, true);
         this.keycloakId = requireIdentityValue(keycloakId, "keycloakId");
+        this.externalId = this.keycloakId;
         this.username = requireIdentityValue(username, "username");
         this.fullName = normalizeFullName(fullName);
     }
@@ -38,6 +42,7 @@ public class User extends Utilisateur {
     public User(String keycloakId, String email, String nom, String prenom, String username, boolean actif) {
         super(email, nom, prenom, username, actif);
         this.keycloakId = requireIdentityValue(keycloakId, "keycloakId");
+        this.externalId = this.keycloakId;
         this.username = requireIdentityValue(username, "username");
         this.fullName = buildFullName(prenom, nom);
     }
@@ -58,7 +63,7 @@ public class User extends Utilisateur {
     }
 
     public String getExternalId() {
-        return keycloakId;
+        return externalId;
     }
 
     public String getFullName() {
@@ -93,6 +98,7 @@ public class User extends Utilisateur {
             String prenom,
             boolean active) {
         this.keycloakId = requireIdentityValue(keycloakId, "keycloakId");
+        this.externalId = this.keycloakId;
         this.username = requireIdentityValue(username, "username");
         setNom(normalizeValue(nom));
         setPrenom(normalizeValue(prenom));
@@ -109,6 +115,7 @@ public class User extends Utilisateur {
             String fullName,
             boolean active) {
         this.keycloakId = requireIdentityValue(keycloakId, "keycloakId");
+        this.externalId = this.keycloakId;
         this.username = requireIdentityValue(username, "username");
         setMatricule(this.username);
         setPrenom(extractPrenom(fullName));
@@ -142,6 +149,12 @@ public class User extends Utilisateur {
     @PrePersist
     @PreUpdate
     private void generateFullName() {
+        if ((keycloakId == null || keycloakId.isBlank()) && externalId != null && !externalId.isBlank()) {
+            this.keycloakId = externalId;
+        }
+        if (externalId == null || externalId.isBlank()) {
+            this.externalId = requireIdentityValue(keycloakId, "externalId");
+        }
         this.fullName = buildFullName(getPrenom(), getNom());
         if (username == null || username.isBlank()) {
             this.username = normalizeUsername(getMatricule(), keycloakId);

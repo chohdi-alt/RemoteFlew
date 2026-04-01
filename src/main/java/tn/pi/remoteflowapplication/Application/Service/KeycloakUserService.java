@@ -2,14 +2,21 @@ package tn.pi.remoteflowapplication.application.service;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.core.task.TaskExecutor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import tn.pi.remoteflowapplication.application.dto.CreateUserRequest;
 import tn.pi.remoteflowapplication.application.port.out.UserRepository;
 import tn.pi.remoteflowapplication.domain.entity.User;
 import tn.pi.remoteflowapplication.domain.exception.BusinessException;
 import tn.pi.remoteflowapplication.infrastructure.security.KeycloakAuthService;
 
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
 import java.util.LinkedHashSet;
 import java.util.Locale;
 import java.util.Map;
@@ -31,14 +38,26 @@ public class KeycloakUserService {
     private final KeycloakAuthService keycloakAuthService;
     private final KeycloakUserSyncService keycloakUserSyncService;
     private final UserRepository userRepository;
+    private final ActivationTokenService activationTokenService;
+    private final EmailNotificationService emailNotificationService;
+    private final TaskExecutor notificationTaskExecutor;
+    private final String activationLinkBase;
 
     public KeycloakUserService(
             KeycloakAuthService keycloakAuthService,
             KeycloakUserSyncService keycloakUserSyncService,
-            UserRepository userRepository) {
+            UserRepository userRepository,
+            ActivationTokenService activationTokenService,
+            EmailNotificationService emailNotificationService,
+            @Qualifier("notificationTaskExecutor") TaskExecutor notificationTaskExecutor,
+            @Value("${app.activation-link-base:http://localhost:4200/activate}") String activationLinkBase) {
         this.keycloakAuthService = keycloakAuthService;
         this.keycloakUserSyncService = keycloakUserSyncService;
         this.userRepository = userRepository;
+        this.activationTokenService = activationTokenService;
+        this.emailNotificationService = emailNotificationService;
+        this.notificationTaskExecutor = notificationTaskExecutor;
+        this.activationLinkBase = activationLinkBase;
     }
 
     @Transactional
@@ -46,12 +65,48 @@ public class KeycloakUserService {
         if (request == null || request.username() == null || request.username().isBlank()) {
             throw new BusinessException("Username is required to create a Keycloak user.");
         }
+        if (request.email() == null || request.email().isBlank()) {
+            throw new BusinessException("Email is required for activation-based onboarding.");
+        }
+
+        String normalizedUsername = request.username().trim();
+        var existingLocalUser = userRepository.findByUsername(normalizedUsername)
+                .filter(user -> user.getKeycloakId() != null && !user.getKeycloakId().isBlank());
+        if (existingLocalUser.isPresent()) {
+            String existingKeycloakId = existingLocalUser.get().getKeycloakId();
+            if (keycloakAuthService.hasValidCredentialsState(existingKeycloakId)) {
+                logger.info("event=USER_CREATE_SKIPPED_EXISTING_LOCAL username={} keycloakId={}",
+                        normalizedUsername,
+                        existingKeycloakId);
+                return existingLocalUser.get();
+            }
+            throw new BusinessException(
+                    "Existing Keycloak user '" + normalizedUsername
+                            + "' has invalid credential state. Restore credentials instead of re-onboarding.");
+        }
+
+        var existingKeycloakUserId = keycloakAuthService.findUserIdByUsername(normalizedUsername);
+        if (existingKeycloakUserId.isPresent()) {
+            String keycloakUserId = existingKeycloakUserId.get();
+            if (!keycloakAuthService.hasValidCredentialsState(keycloakUserId)) {
+                throw new BusinessException(
+                        "Existing Keycloak user '" + normalizedUsername
+                                + "' has invalid credential state. Restore credentials instead of re-onboarding.");
+            }
+            logger.info("event=USER_CREATE_SKIPPED_EXISTING_KEYCLOAK username={} keycloakId={}",
+                    normalizedUsername,
+                    keycloakUserId);
+            keycloakUserSyncService.synchronizeUsersAndRoles();
+            return userRepository.findByKeycloakId(keycloakUserId)
+                    .or(() -> userRepository.findByUsername(normalizedUsername))
+                    .orElseThrow(() -> new BusinessException("Existing Keycloak user was not found in local repository: " + normalizedUsername));
+        }
 
         String normalizedRole = resolvePrimaryRole(request.roles());
         String targetGroup = ROLE_TO_GROUP.get(normalizedRole);
 
         String keycloakUserId = keycloakAuthService.createUser(
-                request.username(),
+                normalizedUsername,
                 request.email(),
                 request.firstName(),
                 request.lastName());
@@ -72,10 +127,26 @@ public class KeycloakUserService {
             throw new BusinessException("User creation failed while assigning role/group in Keycloak.", ex);
         }
 
-        keycloakUserSyncService.synchronizeUsersAndRoles();
+        try {
+            keycloakUserSyncService.synchronizeUsersAndRoles();
 
-        return userRepository.findByKeycloakId(keycloakUserId)
-                .orElseThrow(() -> new BusinessException("User synchronization failed for: " + keycloakUserId));
+            User user = userRepository.findByKeycloakId(keycloakUserId)
+                    .orElseThrow(() -> new BusinessException("User synchronization failed for: " + keycloakUserId));
+
+            ActivationTokenService.IssuedActivationToken issuedToken = activationTokenService.issueToken(
+                    user,
+                    keycloakUserId,
+                    user.getUsername(),
+                    user.getEmail());
+
+            String activationLink = buildActivationLink(issuedToken.rawToken());
+            dispatchActivationEmailAfterCommit(user.getEmail(), user.getUsername(), activationLink);
+            return user;
+        } catch (Exception ex) {
+            logger.error("event=USER_ONBOARDING_SETUP_FAILED userId={} reason={}", keycloakUserId, ex.getMessage(), ex);
+            keycloakAuthService.deleteUser(keycloakUserId);
+            throw new BusinessException("User creation failed while preparing activation.", ex);
+        }
     }
 
     private String resolvePrimaryRole(Set<String> requestedRoles) {
@@ -108,5 +179,26 @@ public class KeycloakUserService {
 
         String value = role.trim().toUpperCase(Locale.ROOT);
         return value.startsWith("ROLE_") ? value.substring(5) : value;
+    }
+
+    private String buildActivationLink(String rawToken) {
+        String delimiter = activationLinkBase.contains("?") ? "&" : "?";
+        return activationLinkBase + delimiter + "token=" + URLEncoder.encode(rawToken, StandardCharsets.UTF_8);
+    }
+
+    private void dispatchActivationEmailAfterCommit(String email, String username, String activationLink) {
+        Runnable dispatchTask = () -> notificationTaskExecutor.execute(
+                () -> emailNotificationService.sendAccountActivationEmail(email, username, activationLink));
+
+        if (TransactionSynchronizationManager.isSynchronizationActive()) {
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
+                public void afterCommit() {
+                    dispatchTask.run();
+                }
+            });
+            return;
+        }
+        dispatchTask.run();
     }
 }

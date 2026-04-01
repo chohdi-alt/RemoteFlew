@@ -13,12 +13,16 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import tn.pi.remoteflowapplication.application.dto.ActivateAccountRequest;
+import tn.pi.remoteflowapplication.application.dto.ActivateAccountResponse;
 import tn.pi.remoteflowapplication.application.dto.AuthTokenResponse;
 import tn.pi.remoteflowapplication.application.dto.ChangePasswordRequest;
 import tn.pi.remoteflowapplication.application.dto.ChangePasswordResponse;
 import tn.pi.remoteflowapplication.application.dto.LoginRequest;
 import tn.pi.remoteflowapplication.application.dto.PasswordUpdateRequiredResponse;
 import tn.pi.remoteflowapplication.application.dto.RefreshRequest;
+import tn.pi.remoteflowapplication.application.port.out.UserRepository;
+import tn.pi.remoteflowapplication.application.service.ActivationTokenService;
 import tn.pi.remoteflowapplication.domain.exception.AuthenticationFailedException;
 import tn.pi.remoteflowapplication.domain.exception.BusinessException;
 import tn.pi.remoteflowapplication.infrastructure.security.KeycloakAuthService;
@@ -39,10 +43,18 @@ public class AuthController {
 
     private final KeycloakTokenService keycloakTokenService;
     private final KeycloakAuthService keycloakAuthService;
+    private final ActivationTokenService activationTokenService;
+    private final UserRepository userRepository;
 
-    public AuthController(KeycloakTokenService keycloakTokenService, KeycloakAuthService keycloakAuthService) {
+    public AuthController(
+            KeycloakTokenService keycloakTokenService,
+            KeycloakAuthService keycloakAuthService,
+            ActivationTokenService activationTokenService,
+            UserRepository userRepository) {
         this.keycloakTokenService = keycloakTokenService;
         this.keycloakAuthService = keycloakAuthService;
+        this.activationTokenService = activationTokenService;
+        this.userRepository = userRepository;
     }
 
     @PostMapping("/login")
@@ -122,6 +134,45 @@ public class AuthController {
         } catch (AuthenticationFailedException ex) {
             logger.warn("event=TOKEN_REFRESH_FAILURE errorCode={} message={}", ex.getErrorCode(), ex.getMessage());
             throw ex;
+        }
+    }
+
+    @PostMapping("/activate")
+    public ResponseEntity<ActivateAccountResponse> activate(@Valid @RequestBody ActivateAccountRequest request) {
+        var activationToken = activationTokenService.findUsableToken(request.token())
+                .orElseThrow(() -> new AuthenticationFailedException(
+                        "Activation token is invalid or expired.",
+                        "ACTIVATION_TOKEN_INVALID",
+                        null,
+                        null,
+                        HttpStatus.UNAUTHORIZED.value()));
+
+        try {
+            String keycloakUserId = activationToken.getKeycloakUserId();
+            keycloakAuthService.resetPassword(keycloakUserId, request.newPassword());
+            keycloakAuthService.clearRequiredAction(keycloakUserId, REQUIRED_ACTION_UPDATE_PASSWORD);
+            keycloakAuthService.setEnabled(keycloakUserId, true);
+
+            activationTokenService.consumeToken(request.token())
+                    .orElseThrow(() -> new BusinessException("Activation token could not be consumed."));
+
+            userRepository.findByKeycloakId(keycloakUserId).ifPresent(user -> {
+                user.updateActivation(true);
+                userRepository.save(user);
+            });
+
+            logger.info("event=AUTH_ACTIVATION_SUCCESS username={} keycloakUserId={}",
+                    activationToken.getUsername(),
+                    keycloakUserId);
+            return ResponseEntity.ok(new ActivateAccountResponse(true, activationToken.getUsername()));
+        } catch (BusinessException ex) {
+            throw ex;
+        } catch (Exception ex) {
+            logger.error("event=AUTH_ACTIVATION_FAILED username={} reason={}",
+                    activationToken.getUsername(),
+                    ex.getMessage(),
+                    ex);
+            throw new BusinessException("Unable to activate account right now. Please retry.", ex);
         }
     }
 

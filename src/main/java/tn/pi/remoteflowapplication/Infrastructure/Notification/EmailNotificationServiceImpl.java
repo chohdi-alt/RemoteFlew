@@ -3,11 +3,12 @@ package tn.pi.remoteflowapplication.infrastructure.notification;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.mail.javamail.JavaMailSender;
+import org.springframework.mail.javamail.JavaMailSenderImpl;
 import org.springframework.mail.javamail.MimeMessageHelper;
 import org.springframework.stereotype.Service;
 import tn.pi.remoteflowapplication.application.port.out.UserRepository;
 import tn.pi.remoteflowapplication.application.service.EmailNotificationService;
+import tn.pi.remoteflowapplication.application.service.SmtpConfigurationService;
 import tn.pi.remoteflowapplication.domain.event.TeleworkRequestApprovedEvent;
 import tn.pi.remoteflowapplication.domain.event.TeleworkRequestRejectedEvent;
 import tn.pi.remoteflowapplication.domain.event.TeleworkRequestSubmittedEvent;
@@ -17,31 +18,28 @@ import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Objects;
+import java.util.Properties;
 import java.util.stream.Collectors;
 
 @Service
 public class EmailNotificationServiceImpl implements EmailNotificationService {
 
     private static final Logger log = LoggerFactory.getLogger(EmailNotificationServiceImpl.class);
+    private static final int MAX_SEND_ATTEMPTS = 3;
+    private static final long RETRY_BACKOFF_MS = 1000L;
 
     private final UserRepository userRepository;
-    private final JavaMailSender mailSender;
+    private final SmtpConfigurationService smtpConfigurationService;
     private final List<String> managerEmails;
-    private final String fromEmail;
-    private final String mailUsername;
 
     public EmailNotificationServiceImpl(
             UserRepository userRepository,
-            JavaMailSender mailSender,
-            @Value("${notification.manager.emails:}") String managerEmails,
-            @Value("${notification.from-email:}") String fromEmail,
-            @Value("${spring.mail.username:}") String mailUsername
+            SmtpConfigurationService smtpConfigurationService,
+            @Value("${notification.manager.emails:}") String managerEmails
     ) {
         this.userRepository = userRepository;
-        this.mailSender = mailSender;
+        this.smtpConfigurationService = smtpConfigurationService;
         this.managerEmails = parseEmails(managerEmails);
-        this.fromEmail = fromEmail;
-        this.mailUsername = mailUsername;
     }
 
     @Override
@@ -87,6 +85,23 @@ public class EmailNotificationServiceImpl implements EmailNotificationService {
         sendToEmployee(email, event.getEmployeeId(), subject, body);
     }
 
+    @Override
+    public void sendAccountActivationEmail(String email, String username, String activationLink) {
+        if (email == null || email.isBlank()) {
+            log.warn("Activation email skipped (email unavailable) for username={}", username);
+            return;
+        }
+
+        String safeUsername = username == null || username.isBlank() ? "user" : username;
+        String subject = "Activate your RemoteFlow account";
+        String body = "Hello " + safeUsername + ",\n\n"
+                + "Your account was created. Set your password and activate your account using this link:\n"
+                + activationLink + "\n\n"
+                + "If you did not expect this email, please contact your administrator.";
+
+        sendEmail(email, subject, body);
+    }
+
     private String resolveEmployeeEmail(String employeeId) {
         try {
             return userRepository.findByUsername(employeeId)
@@ -126,36 +141,98 @@ public class EmailNotificationServiceImpl implements EmailNotificationService {
     }
 
     private void sendEmail(String to, String subject, String body) {
-        String from = resolveFromAddress();
+        SmtpConfigurationService.SmtpConnectionSettings settings = smtpConfigurationService.getEffectiveSettings();
+        String from = resolveFromAddress(settings);
         if (from == null || from.isBlank()) {
             log.warn("Email not sent: from address is not configured. Recipient={}", to);
             return;
         }
 
+        for (int attempt = 1; attempt <= MAX_SEND_ATTEMPTS; attempt++) {
+            try {
+                sendSingleEmail(settings, from, to, subject, body);
+                log.info("Email sent to {} | {} (attempt {}/{})", to, subject, attempt, MAX_SEND_ATTEMPTS);
+                return;
+            } catch (Exception ex) {
+                if (attempt >= MAX_SEND_ATTEMPTS) {
+                    log.error("Failed to send email to {} | {} after {} attempts", to, subject, MAX_SEND_ATTEMPTS, ex);
+                    return;
+                }
+                log.warn("Email send attempt {}/{} failed for {} | {}. Retrying...", attempt, MAX_SEND_ATTEMPTS, to, subject, ex);
+                sleepBackoff(attempt);
+            }
+        }
+    }
+
+    private void sendSingleEmail(
+            SmtpConfigurationService.SmtpConnectionSettings settings,
+            String from,
+            String to,
+            String subject,
+            String body) {
+        JavaMailSenderImpl mailSender = createMailSender(settings);
+        MimeMessage message = mailSender.createMimeMessage();
+        MimeMessageHelper helper;
         try {
-            MimeMessage message = mailSender.createMimeMessage();
-            MimeMessageHelper helper = new MimeMessageHelper(
+            helper = new MimeMessageHelper(
                     message,
                     false,
-                    StandardCharsets.UTF_8.name()
-            );
+                    StandardCharsets.UTF_8.name());
             helper.setFrom(from);
             helper.setTo(to);
             helper.setSubject(subject);
             helper.setText(body, false);
-            mailSender.send(message);
-            log.info("Email sent to {} | {}", to, subject);
         } catch (Exception ex) {
-            log.error("Failed to send email to {} | {}", to, subject, ex);
+            throw new IllegalStateException("Failed to create SMTP message payload", ex);
+        }
+        mailSender.send(message);
+    }
+
+    private void sleepBackoff(int attempt) {
+        long delay = RETRY_BACKOFF_MS * attempt;
+        try {
+            Thread.sleep(delay);
+        } catch (InterruptedException interruptedException) {
+            Thread.currentThread().interrupt();
         }
     }
 
-    private String resolveFromAddress() {
-        if (fromEmail != null && !fromEmail.isBlank()) {
-            return fromEmail;
+    private JavaMailSenderImpl createMailSender(SmtpConfigurationService.SmtpConnectionSettings settings) {
+        JavaMailSenderImpl sender = new JavaMailSenderImpl();
+        sender.setHost(settings.host());
+        if (settings.port() != null) {
+            sender.setPort(settings.port());
         }
-        if (mailUsername != null && !mailUsername.isBlank()) {
-            return mailUsername;
+        sender.setProtocol(settings.protocol());
+        if (settings.username() != null && !settings.username().isBlank()) {
+            sender.setUsername(settings.username());
+        }
+        if (settings.password() != null && !settings.password().isBlank()) {
+            sender.setPassword(settings.password());
+        }
+
+        Properties javaMailProps = sender.getJavaMailProperties();
+        javaMailProps.put("mail.smtp.auth", String.valueOf(settings.authEnabled()));
+        javaMailProps.put("mail.smtp.starttls.enable", String.valueOf(settings.starttlsEnabled()));
+        javaMailProps.put("mail.smtp.ssl.enable", String.valueOf(settings.sslEnabled()));
+        if (settings.connectionTimeoutMs() != null) {
+            javaMailProps.put("mail.smtp.connectiontimeout", String.valueOf(settings.connectionTimeoutMs()));
+        }
+        if (settings.readTimeoutMs() != null) {
+            javaMailProps.put("mail.smtp.timeout", String.valueOf(settings.readTimeoutMs()));
+        }
+        if (settings.writeTimeoutMs() != null) {
+            javaMailProps.put("mail.smtp.writetimeout", String.valueOf(settings.writeTimeoutMs()));
+        }
+        return sender;
+    }
+
+    private String resolveFromAddress(SmtpConfigurationService.SmtpConnectionSettings settings) {
+        if (settings.fromEmail() != null && !settings.fromEmail().isBlank()) {
+            return settings.fromEmail();
+        }
+        if (settings.username() != null && !settings.username().isBlank()) {
+            return settings.username();
         }
         return null;
     }

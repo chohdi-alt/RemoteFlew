@@ -3,7 +3,6 @@ package tn.pi.remoteflowapplication.infrastructure.security;
 import jakarta.ws.rs.NotFoundException;
 import org.keycloak.admin.client.Keycloak;
 import org.keycloak.admin.client.resource.RealmResource;
-import org.keycloak.representations.idm.CredentialRepresentation;
 import org.keycloak.representations.idm.GroupRepresentation;
 import org.keycloak.representations.idm.RoleRepresentation;
 import org.keycloak.representations.idm.UserRepresentation;
@@ -27,8 +26,6 @@ import java.util.stream.Collectors;
 public class KeycloakAuthService {
 
     private static final Logger logger = LoggerFactory.getLogger(KeycloakAuthService.class);
-    private static final String DEFAULT_TEMPORARY_PASSWORD = "remoteflow";
-    private static final String REQUIRED_ACTION_UPDATE_PASSWORD = "UPDATE_PASSWORD";
 
     private final Keycloak keycloak;
     private final String realm;
@@ -179,9 +176,8 @@ public class KeycloakAuthService {
         user.setEmail(email);
         user.setFirstName(firstName);
         user.setLastName(lastName);
-        user.setEnabled(true);
-        user.setRequiredActions(List.of(REQUIRED_ACTION_UPDATE_PASSWORD));
-        user.setCredentials(List.of(buildTemporaryPasswordCredential()));
+        user.setEnabled(false);
+        user.setRequiredActions(List.of());
 
         try (jakarta.ws.rs.core.Response response = realmResource().users().create(user)) {
             if (response.getStatus() == 201) {
@@ -249,6 +245,33 @@ public class KeycloakAuthService {
         }
 
         return requiredActions.stream().anyMatch(action -> requiredAction.equalsIgnoreCase(action));
+    }
+
+    public boolean hasValidCredentialsState(String userId) {
+        if (userId == null || userId.isBlank()) {
+            return false;
+        }
+
+        var userResource = realmResource().users().get(userId);
+        UserRepresentation representation = userResource.toRepresentation();
+        if (representation == null || representation.isEnabled() == null || !representation.isEnabled()) {
+            return false;
+        }
+
+        List<String> requiredActions = representation.getRequiredActions();
+        if (requiredActions != null && !requiredActions.isEmpty()) {
+            return false;
+        }
+
+        try {
+            return userResource.credentials().stream()
+                    .anyMatch(credential -> credential != null
+                            && org.keycloak.representations.idm.CredentialRepresentation.PASSWORD
+                            .equalsIgnoreCase(credential.getType()));
+        } catch (Exception ex) {
+            logger.warn("event=KEYCLOAK_CREDENTIAL_STATE_CHECK_FAILED userId={} reason={}", userId, ex.getMessage());
+            return false;
+        }
     }
 
     public List<RoleRepresentation> getAllRoles() {
@@ -365,13 +388,5 @@ public class KeycloakAuthService {
             return value.substring(5);
         }
         return value;
-    }
-
-    private CredentialRepresentation buildTemporaryPasswordCredential() {
-        CredentialRepresentation credential = new CredentialRepresentation();
-        credential.setType(CredentialRepresentation.PASSWORD);
-        credential.setValue(DEFAULT_TEMPORARY_PASSWORD);
-        credential.setTemporary(true);
-        return credential;
     }
 }

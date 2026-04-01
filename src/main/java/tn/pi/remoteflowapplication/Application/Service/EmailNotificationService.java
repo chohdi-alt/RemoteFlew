@@ -11,4 +11,6 @@ public interface EmailNotificationService {
     void notifyEmployeeOfApproval(TeleworkRequestApprovedEvent event);
 
     void notifyEmployeeOfRejection(TeleworkRequestRejectedEvent event);
+
+    void sendAccountActivationEmail(String email, String username, String activationLink);
 }
