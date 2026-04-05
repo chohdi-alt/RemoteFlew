@@ -1,9 +1,12 @@
 package tn.pi.remoteflowapplication.controller;
 
 import jakarta.validation.Valid;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -24,6 +27,8 @@ import java.util.List;
 @PreAuthorize("hasRole('ADMIN')")
 public class AdminSmtpController {
 
+    private static final Logger log = LoggerFactory.getLogger(AdminSmtpController.class);
+
     private final SmtpConfigurationService smtpConfigurationService;
 
     public AdminSmtpController(SmtpConfigurationService smtpConfigurationService) {
@@ -31,7 +36,13 @@ public class AdminSmtpController {
     }
 
     @GetMapping
-    public List<SmtpConfigResponse> list() {
+    public List<SmtpConfigResponse> list(Authentication authentication) {
+        log.error("[SMTP API] HIT");
+        if (authentication != null) {
+            log.error("[AUTH] USER={} ROLES={}", authentication.getName(), authentication.getAuthorities());
+        } else {
+            log.error("[AUTH] USER=null ROLES=null");
+        }
         return smtpConfigurationService.findAll();
     }
 

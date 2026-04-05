@@ -14,6 +14,7 @@ import tn.pi.remoteflowapplication.domain.event.TeleworkRequestRejectedEvent;
 import tn.pi.remoteflowapplication.domain.event.TeleworkRequestSubmittedEvent;
 
 import jakarta.mail.internet.MimeMessage;
+import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import java.util.List;
@@ -100,6 +101,34 @@ public class EmailNotificationServiceImpl implements EmailNotificationService {
                 + "If you did not expect this email, please contact your administrator.";
 
         sendEmail(email, subject, body);
+    }
+
+    @Override
+    public void notifyManagerScoringReminder(String managerEmail, Long requestId) {
+        if (managerEmail == null || managerEmail.isBlank()) {
+            return;
+        }
+        String requestRef = requestId == null ? "N/A" : requestId.toString();
+        String subject = "Telework scoring pending";
+        String body = "A telework request has reached its end date and is waiting for your scoring input."
+                + " Request ID: " + requestRef + ".";
+        sendEmail(managerEmail, subject, body);
+    }
+
+    @Override
+    public void notifyHrOfNewScore(String hrEmail, Long requestId, String managerExternalId, BigDecimal totalScore) {
+        if (hrEmail == null || hrEmail.isBlank()) {
+            return;
+        }
+        String requestRef = requestId == null ? "N/A" : requestId.toString();
+        String managerRef = managerExternalId == null || managerExternalId.isBlank() ? "N/A" : managerExternalId;
+        String totalRef = totalScore == null ? "N/A" : totalScore.toPlainString();
+        String subject = "New telework score submitted";
+        String body = "A telework score is ready for HR review."
+                + " Request ID: " + requestRef
+                + ", manager: " + managerRef
+                + ", total score: " + totalRef + ".";
+        sendEmail(hrEmail, subject, body);
     }
 
     private String resolveEmployeeEmail(String employeeId) {

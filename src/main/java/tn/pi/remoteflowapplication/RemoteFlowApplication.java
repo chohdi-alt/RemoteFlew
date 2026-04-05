@@ -2,11 +2,13 @@ package tn.pi.remoteflowapplication;
 
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
+import org.springframework.scheduling.annotation.EnableScheduling;
 
 import io.camunda.zeebe.spring.client.annotation.Deployment;
 
 @Deployment(resources = "classpath:telework_process.bpmn")
 @SpringBootApplication
+@EnableScheduling
 public class RemoteFlowApplication {
 
     public static void main(String[] args) {

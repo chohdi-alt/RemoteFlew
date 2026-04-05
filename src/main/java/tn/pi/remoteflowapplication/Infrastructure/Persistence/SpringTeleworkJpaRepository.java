@@ -11,6 +11,7 @@ import tn.pi.remoteflowapplication.infrastructure.persistence.projection.Monthly
 import tn.pi.remoteflowapplication.infrastructure.persistence.projection.StatusCountProjection;
 
 import java.time.Instant;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
 
@@ -155,4 +156,17 @@ public interface SpringTeleworkJpaRepository
         Double averageManagerDecisionTimeForTeam(@Param("teamId") Long teamId);
 
         List<TeleworkRequest> findByEmployeeIdOrderBySubmittedAtDesc(String employeeId, Pageable pageable);
+
+        @Query("""
+                        select r
+                        from TeleworkRequest r
+                        where r.status = tn.pi.remoteflowapplication.domain.state.RequestStatus.APPROVED
+                          and r.endDate < :referenceDate
+                          and not exists (
+                                select 1
+                                from TeleworkScore s
+                                where s.teleworkRequest = r
+                          )
+                        """)
+        List<TeleworkRequest> findApprovedEndedBeforeWithoutScore(@Param("referenceDate") LocalDate referenceDate);
 }

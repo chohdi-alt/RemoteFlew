@@ -2,6 +2,8 @@ package tn.pi.remoteflowapplication.application.service;
 
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.mail.MailProperties;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.mail.javamail.JavaMailSenderImpl;
@@ -20,6 +22,7 @@ import java.util.Properties;
 @Service
 public class SmtpConfigurationService {
 
+    private static final Logger log = LoggerFactory.getLogger(SmtpConfigurationService.class);
     private static final String DB_SOURCE = "DATABASE";
     private static final String APP_PROPS_SOURCE = "APPLICATION_PROPERTIES";
 
@@ -38,10 +41,16 @@ public class SmtpConfigurationService {
 
     @Transactional(readOnly = true)
     public List<SmtpConfigResponse> findAll() {
-        return smtpConfigRepository.findAll()
-                .stream()
+        log.error("[SMTP SERVICE] FETCHING CONFIGS");
+        List<SmtpConfig> configs = smtpConfigRepository.findAll();
+        log.error("[SMTP DB RESULT] size={}", configs.size());
+
+        List<SmtpConfigResponse> responses = configs.stream()
                 .map(config -> toResponse(config, DB_SOURCE))
                 .toList();
+
+        log.error("[SMTP RESPONSE] {}", responses);
+        return responses;
     }
 
     @Transactional(readOnly = true)

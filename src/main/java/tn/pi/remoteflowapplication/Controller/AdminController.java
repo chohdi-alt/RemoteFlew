@@ -36,6 +36,7 @@ import tn.pi.remoteflowapplication.application.service.SystemConfigurationServic
 import tn.pi.remoteflowapplication.domain.entity.TeleworkRequest;
 import tn.pi.remoteflowapplication.domain.exception.BusinessException;
 import tn.pi.remoteflowapplication.domain.state.RequestStatus;
+import tn.pi.remoteflowapplication.infrastructure.persistence.SpringTeleworkScoreJpaRepository;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -55,6 +56,7 @@ public class AdminController {
     private final RoleService roleService;
     private final TeleworkRequestRepository teleworkRequestRepository;
     private final DocumentStoragePort documentStoragePort;
+    private final SpringTeleworkScoreJpaRepository teleworkScoreRepository;
 
     public AdminController(
             AdminUserService adminUserService,
@@ -62,13 +64,15 @@ public class AdminController {
             SystemConfigurationService systemConfigurationService,
             RoleService roleService,
             TeleworkRequestRepository teleworkRequestRepository,
-            DocumentStoragePort documentStoragePort) {
+            DocumentStoragePort documentStoragePort,
+            SpringTeleworkScoreJpaRepository teleworkScoreRepository) {
         this.adminUserService = adminUserService;
         this.auditLogQueryService = auditLogQueryService;
         this.systemConfigurationService = systemConfigurationService;
         this.roleService = roleService;
         this.teleworkRequestRepository = teleworkRequestRepository;
         this.documentStoragePort = documentStoragePort;
+        this.teleworkScoreRepository = teleworkScoreRepository;
     }
 
     @GetMapping("/users")
@@ -162,6 +166,7 @@ public class AdminController {
     private ArchiveSummaryDTO toArchiveSummaryDTO(TeleworkRequest request) {
         String archiveId = normalizeNodeId(request.getArchiveNodeId());
         log.info("[API_MAPPING] id={} archiveNodeId={}", request.getId(), archiveId);
+        var score = teleworkScoreRepository.findByTeleworkRequest_Id(request.getId()).orElse(null);
 
         boolean isSpecial = request.getStatus() == RequestStatus.SPECIAL
                 || (request.getJustificationReason() != null && !request.getJustificationReason().isBlank());
@@ -182,7 +187,10 @@ public class AdminController {
                 isSpecial,
                 request.getJustificationReason(),
                 request.getAlfrescoNodeId(),
-                archiveId
+                archiveId,
+                score == null ? null : score.getId(),
+                score == null || score.getStatus() == null ? null : score.getStatus().name(),
+                score == null ? null : score.getTotalScore()
         );
     }
 

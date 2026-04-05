@@ -19,5 +19,8 @@ public record ArchiveSummaryDTO(
         boolean specialCase,
         String justificationReason,
         String justificatifFileId,
-        String archiveNodeId
+        String archiveNodeId,
+        Long scoreId,
+        String scoreStatus,
+        java.math.BigDecimal scoreValue
 ) {}
