@@ -24,6 +24,9 @@ public class KeycloakConfig {
     @Value("${keycloak.admin.client-id}")
     private String clientId;
 
+    @Value("${keycloak.admin.client-secret:}")
+    private String clientSecret;
+
     @Value("${keycloak.admin.username}")
     private String username;
 
@@ -42,15 +45,20 @@ public class KeycloakConfig {
                 .register(jacksonProvider)
                 .build();
 
-        return KeycloakBuilder.builder()
+        KeycloakBuilder builder = KeycloakBuilder.builder()
                 .serverUrl(serverUrl)
                 .realm(realm)
                 .clientId(clientId)
                 .username(username)
                 .password(password)
                 .grantType(OAuth2Constants.PASSWORD)
-                .resteasyClient(resteasyClient)
-                .build();
+                .resteasyClient(resteasyClient);
+
+        if (clientSecret != null && !clientSecret.isBlank()) {
+            builder.clientSecret(clientSecret);
+        }
+
+        return builder.build();
     }
 }
 

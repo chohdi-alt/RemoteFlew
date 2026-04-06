@@ -17,6 +17,9 @@ import tn.pi.remoteflowapplication.domain.exception.ForbiddenOperationException;
 import tn.pi.remoteflowapplication.domain.exception.WorkflowExecutionException;
 import tn.pi.remoteflowapplication.domain.exception.BadRequestException;
 import tn.pi.remoteflowapplication.domain.exception.AuthenticationFailedException;
+import tn.pi.remoteflowapplication.domain.exception.ExternalServiceException;
+import tn.pi.remoteflowapplication.domain.exception.KeycloakConflictException;
+import tn.pi.remoteflowapplication.domain.exception.UserAlreadyExistsException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -32,6 +35,35 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(BusinessException.class)
     public ResponseEntity<ApiError> handleBusinessException(BusinessException ex, HttpServletRequest request) {
         return buildError(HttpStatus.BAD_REQUEST, "BUSINESS_RULE_VIOLATION", ex.getMessage(), request);
+    }
+
+    @ExceptionHandler(UserAlreadyExistsException.class)
+    public ResponseEntity<ApiError> handleUserAlreadyExistsException(
+            UserAlreadyExistsException ex,
+            HttpServletRequest request) {
+        return buildError(HttpStatus.CONFLICT, "USER_ALREADY_EXISTS", ex.getMessage(), request);
+    }
+
+    @ExceptionHandler(KeycloakConflictException.class)
+    public ResponseEntity<ApiError> handleKeycloakConflictException(
+            KeycloakConflictException ex,
+            HttpServletRequest request) {
+        return buildError(HttpStatus.CONFLICT, "KEYCLOAK_CONFLICT", ex.getMessage(), request);
+    }
+
+    @ExceptionHandler(ExternalServiceException.class)
+    public ResponseEntity<ApiError> handleExternalServiceException(
+            ExternalServiceException ex,
+            HttpServletRequest request) {
+        logger.error(
+                "event=EXTERNAL_SERVICE_FAILURE path={} operation={} upstreamStatus={} upstreamUrl={} upstreamBody={} message={}",
+                request == null ? null : request.getRequestURI(),
+                ex.getOperation(),
+                ex.getUpstreamStatus(),
+                ex.getUpstreamUrl(),
+                ex.getUpstreamBody(),
+                ex.getMessage());
+        return buildError(HttpStatus.BAD_GATEWAY, "EXTERNAL_SERVICE_ERROR", ex.getMessage(), request);
     }
 
     @ExceptionHandler(AccessDeniedException.class)

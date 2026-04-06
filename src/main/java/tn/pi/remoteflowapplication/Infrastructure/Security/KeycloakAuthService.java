@@ -1,6 +1,9 @@
 package tn.pi.remoteflowapplication.infrastructure.security;
 
 import jakarta.ws.rs.NotFoundException;
+import jakarta.ws.rs.ProcessingException;
+import jakarta.ws.rs.WebApplicationException;
+import jakarta.ws.rs.core.Response;
 import org.keycloak.admin.client.Keycloak;
 import org.keycloak.admin.client.resource.RealmResource;
 import org.keycloak.representations.idm.GroupRepresentation;
@@ -21,11 +24,15 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
+import tn.pi.remoteflowapplication.domain.exception.ExternalServiceException;
+import tn.pi.remoteflowapplication.domain.exception.KeycloakConflictException;
 
 @Service
 public class KeycloakAuthService {
 
     private static final Logger logger = LoggerFactory.getLogger(KeycloakAuthService.class);
+    private static final int MAX_LOGGED_BODY_LENGTH = 512;
+    private static final String REQUIRED_ACTION_UPDATE_PASSWORD = "UPDATE_PASSWORD";
 
     private final Keycloak keycloak;
     private final String realm;
@@ -43,15 +50,22 @@ public class KeycloakAuthService {
     }
 
     public List<String> getRealmRoles(String userId) {
-        return realmResource()
-                .users()
-                .get(userId)
-                .roles()
-                .realmLevel()
-                .listEffective()
-                .stream()
-                .map(RoleRepresentation::getName)
-                .toList();
+        try {
+            return realmResource()
+                    .users()
+                    .get(userId)
+                    .roles()
+                    .realmLevel()
+                    .listEffective()
+                    .stream()
+                    .map(RoleRepresentation::getName)
+                    .toList();
+        } catch (Exception ex) {
+            throw mapToExternalServiceException(
+                    "read realm roles for user " + userId,
+                    buildUserRealmRolesEndpoint(userId),
+                    ex);
+        }
     }
 
     public List<String> getGroups(String userId) {
@@ -65,9 +79,13 @@ public class KeycloakAuthService {
     }
 
     public List<UserRepresentation> getAllUsers() {
-        return realmResource()
-                .users()
-                .list();
+        try {
+            return realmResource()
+                    .users()
+                    .list();
+        } catch (Exception ex) {
+            throw mapToExternalServiceException("read users", buildUsersEndpoint(), ex);
+        }
     }
 
     public void setRealmRoles(String userId, Set<String> targetRoles) {
@@ -176,16 +194,72 @@ public class KeycloakAuthService {
         user.setEmail(email);
         user.setFirstName(firstName);
         user.setLastName(lastName);
-        user.setEnabled(false);
-        user.setRequiredActions(List.of());
+        user.setEnabled(true);
+        user.setRequiredActions(List.of(REQUIRED_ACTION_UPDATE_PASSWORD));
 
-        try (jakarta.ws.rs.core.Response response = realmResource().users().create(user)) {
-            if (response.getStatus() == 201) {
-                String path = response.getLocation().getPath();
-                return path.substring(path.lastIndexOf('/') + 1);
+        String endpoint = buildUsersEndpoint();
+        logger.info(
+                "event=KEYCLOAK_CREATE_REQUEST username={} email={} firstNameSet={} lastNameSet={} url={}",
+                username,
+                email,
+                firstName != null && !firstName.isBlank(),
+                lastName != null && !lastName.isBlank(),
+                endpoint);
+
+        try (Response response = realmResource().users().create(user)) {
+            int status = response.getStatus();
+            String responseBody = safeReadResponseBody(response);
+            logger.info(
+                    "event=KEYCLOAK_CREATE_RESPONSE status={} url={} username={} email={} body={}",
+                    status,
+                    endpoint,
+                    username,
+                    email,
+                    abbreviateBody(responseBody));
+
+            if (status == 201) {
+                String userIdFromLocation = extractUserIdFromLocation(response);
+                if (userIdFromLocation != null && !userIdFromLocation.isBlank()) {
+                    return userIdFromLocation;
+                }
+
+                logger.warn(
+                        "event=KEYCLOAK_CREATE_LOCATION_MISSING username={} email={} status={} url={} body={}",
+                        username,
+                        email,
+                        status,
+                        endpoint,
+                        abbreviateBody(responseBody));
+
+                Optional<String> resolvedUserId = resolveCreatedUserId(username, email);
+                if (resolvedUserId.isPresent()) {
+                    return resolvedUserId.get();
+                }
+
+                throw new ExternalServiceException(
+                        "Keycloak returned 201 but no user id could be resolved from Location/search.",
+                        status,
+                        responseBody,
+                        endpoint,
+                        "create user");
             }
-            throw new RuntimeException(
-                    "Failed to create Keycloak user, status: " + response.getStatusInfo().getReasonPhrase());
+            if (status == 409) {
+                throw new KeycloakConflictException(
+                        "User already exists in Keycloak for username '" + username + "' or email '" + email + "'.");
+            }
+            String reason = response.getStatusInfo() == null
+                    ? "unknown"
+                    : response.getStatusInfo().getReasonPhrase();
+            throw new ExternalServiceException(
+                    buildStatusMessage("create user", status, reason),
+                    status,
+                    responseBody,
+                    endpoint,
+                    "create user");
+        } catch (ExternalServiceException ex) {
+            throw ex;
+        } catch (Exception ex) {
+            throw mapToExternalServiceException("create user", endpoint, ex);
         }
     }
 
@@ -203,13 +277,42 @@ public class KeycloakAuthService {
         }
 
         String normalizedUsername = username.trim();
-        return realmResource().users().searchByUsername(normalizedUsername, true)
-                .stream()
-                .filter(user -> user.getUsername() != null)
-                .filter(user -> user.getUsername().equalsIgnoreCase(normalizedUsername))
-                .map(UserRepresentation::getId)
-                .filter(id -> id != null && !id.isBlank())
-                .findFirst();
+        try {
+            return realmResource().users().searchByUsername(normalizedUsername, true)
+                    .stream()
+                    .filter(user -> user.getUsername() != null)
+                    .filter(user -> user.getUsername().equalsIgnoreCase(normalizedUsername))
+                    .map(UserRepresentation::getId)
+                    .filter(id -> id != null && !id.isBlank())
+                    .findFirst();
+        } catch (Exception ex) {
+            throw mapToExternalServiceException(
+                    "search user by username '" + normalizedUsername + "'",
+                    buildUsersSearchByUsernameEndpoint(normalizedUsername),
+                    ex);
+        }
+    }
+
+    public Optional<String> findUserIdByEmail(String email) {
+        if (email == null || email.isBlank()) {
+            return Optional.empty();
+        }
+
+        String normalizedEmail = email.trim();
+        try {
+            return realmResource().users().searchByEmail(normalizedEmail, true)
+                    .stream()
+                    .filter(user -> user.getEmail() != null)
+                    .filter(user -> user.getEmail().equalsIgnoreCase(normalizedEmail))
+                    .map(UserRepresentation::getId)
+                    .filter(id -> id != null && !id.isBlank())
+                    .findFirst();
+        } catch (Exception ex) {
+            throw mapToExternalServiceException(
+                    "search user by email '" + normalizedEmail + "'",
+                    buildUsersSearchByEmailEndpoint(normalizedEmail),
+                    ex);
+        }
     }
 
     public void clearRequiredAction(String userId, String requiredAction) {
@@ -275,7 +378,188 @@ public class KeycloakAuthService {
     }
 
     public List<RoleRepresentation> getAllRoles() {
-        return realmResource().roles().list();
+        try {
+            return realmResource().roles().list();
+        } catch (Exception ex) {
+            throw mapToExternalServiceException("read roles", buildRolesEndpoint(), ex);
+        }
+    }
+
+    public boolean realmRoleExists(String roleName) {
+        String normalizedRole = normalizeRole(roleName);
+        if (normalizedRole.isBlank()) {
+            return false;
+        }
+
+        try {
+            return realmResource().roles().list().stream()
+                    .map(RoleRepresentation::getName)
+                    .filter(Objects::nonNull)
+                    .map(this::normalizeRole)
+                    .anyMatch(existingRole -> existingRole.equalsIgnoreCase(normalizedRole));
+        } catch (Exception ex) {
+            throw mapToExternalServiceException(
+                    "verify realm role '" + normalizedRole + "'",
+                    buildRolesEndpoint(),
+                    ex);
+        }
+    }
+
+    private Optional<String> resolveCreatedUserId(String username, String email) {
+        Optional<String> byUsername = findUserIdByUsername(username);
+        if (byUsername.isPresent()) {
+            return byUsername;
+        }
+        return findUserIdByEmail(email);
+    }
+
+    private String extractUserIdFromLocation(Response response) {
+        if (response == null || response.getLocation() == null) {
+            return null;
+        }
+        String path = response.getLocation().getPath();
+        if (path == null || path.isBlank()) {
+            return null;
+        }
+        return path.substring(path.lastIndexOf('/') + 1);
+    }
+
+    private ExternalServiceException mapToExternalServiceException(String operation, String endpoint, Exception ex) {
+        if (ex instanceof ExternalServiceException externalServiceException) {
+            return externalServiceException;
+        }
+
+        if (ex instanceof WebApplicationException webEx) {
+            Response response = webEx.getResponse();
+            int status = response == null ? -1 : response.getStatus();
+            String body = safeReadResponseBody(response);
+            String reason = response != null && response.getStatusInfo() != null
+                    ? response.getStatusInfo().getReasonPhrase()
+                    : "unknown";
+            String message = buildStatusMessage(operation, status, reason);
+
+            logger.error(
+                    "event=KEYCLOAK_API_ERROR operation={} status={} reason={} url={} body={} cause={}",
+                    operation,
+                    status,
+                    reason,
+                    endpoint,
+                    abbreviateBody(body),
+                    webEx.getMessage(),
+                    webEx);
+
+            return new ExternalServiceException(message, webEx, status, body, endpoint, operation);
+        }
+
+        if (isNetworkFailure(ex)) {
+            logger.error(
+                    "event=KEYCLOAK_API_ERROR operation={} status=network_failure url={} cause={}",
+                    operation,
+                    endpoint,
+                    ex.getMessage(),
+                    ex);
+            return new ExternalServiceException(
+                    "Unable to reach Keycloak while attempting to " + operation + ".",
+                    ex,
+                    null,
+                    null,
+                    endpoint,
+                    operation);
+        }
+
+        logger.error(
+                "event=KEYCLOAK_API_ERROR operation={} status=unexpected_exception url={} cause={}",
+                operation,
+                endpoint,
+                ex.getMessage(),
+                ex);
+        return new ExternalServiceException(
+                "Keycloak call failed while attempting to " + operation + ".",
+                ex,
+                null,
+                null,
+                endpoint,
+                operation);
+    }
+
+    private String safeReadResponseBody(Response response) {
+        if (response == null || !response.hasEntity()) {
+            return "";
+        }
+        try {
+            String body = response.readEntity(String.class);
+            return body == null ? "" : body;
+        } catch (Exception ignored) {
+            return "<unavailable>";
+        }
+    }
+
+    private String buildStatusMessage(String operation, int status, String reason) {
+        if (status == 401 || status == 403) {
+            return "Keycloak rejected the request to " + operation
+                    + " (HTTP " + status + "). Verify admin credentials and realm-management permissions.";
+        }
+        if (status == 404) {
+            return "Keycloak endpoint/realm not found while attempting to " + operation
+                    + " (HTTP 404). Verify server URL and realm configuration.";
+        }
+        if (status == 400) {
+            return "Keycloak rejected the request payload while attempting to " + operation
+                    + " (HTTP 400).";
+        }
+        if (status >= 500 && status < 600) {
+            return "Keycloak server error while attempting to " + operation + " (HTTP " + status + ").";
+        }
+        return "Keycloak call failed while attempting to " + operation + " with status "
+                + status + " (" + reason + ").";
+    }
+
+    private boolean isNetworkFailure(Exception ex) {
+        Throwable cursor = ex;
+        while (cursor != null) {
+            if (cursor instanceof ProcessingException) {
+                return true;
+            }
+            if (cursor instanceof java.net.ConnectException
+                    || cursor instanceof java.net.SocketTimeoutException
+                    || cursor instanceof java.net.UnknownHostException
+                    || cursor instanceof java.util.concurrent.TimeoutException) {
+                return true;
+            }
+            cursor = cursor.getCause();
+        }
+        return false;
+    }
+
+    private String abbreviateBody(String body) {
+        if (body == null || body.isBlank()) {
+            return "";
+        }
+        String normalized = body.replaceAll("\\s+", " ").trim();
+        if (normalized.length() <= MAX_LOGGED_BODY_LENGTH) {
+            return normalized;
+        }
+        return normalized.substring(0, MAX_LOGGED_BODY_LENGTH) + "...";
+    }
+
+    private String buildUsersEndpoint() {
+        return "/admin/realms/" + realm + "/users";
+    }
+
+    private String buildUsersSearchByUsernameEndpoint(String username) {
+        return buildUsersEndpoint() + "?username=" + username + "&exact=true";
+    }
+
+    private String buildUsersSearchByEmailEndpoint(String email) {
+        return buildUsersEndpoint() + "?email=" + email + "&exact=true";
+    }
+
+    private String buildRolesEndpoint() {
+        return "/admin/realms/" + realm + "/roles";
+    }
+
+    private String buildUserRealmRolesEndpoint(String userId) {
+        return "/admin/realms/" + realm + "/users/" + userId + "/role-mappings/realm/composite";
     }
 
     private RealmResource realmResource() {

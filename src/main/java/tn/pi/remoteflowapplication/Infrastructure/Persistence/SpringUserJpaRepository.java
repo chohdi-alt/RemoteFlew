@@ -11,6 +11,8 @@ public interface SpringUserJpaRepository extends JpaRepository<User, Long> {
 
     Optional<User> findByUsername(String username);
 
+    Optional<User> findByEmailIgnoreCase(String email);
+
     @Query("select distinct u from User u left join fetch u.roles left join fetch u.equipe")
     java.util.List<User> findAllWithRolesAndTeam();
 

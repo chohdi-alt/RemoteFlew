@@ -27,6 +27,11 @@ public class JpaUserRepository implements UserRepository {
     }
 
     @Override
+    public Optional<User> findByEmail(String email) {
+        return jpaRepository.findByEmailIgnoreCase(email);
+    }
+
+    @Override
     public Optional<Long> findTeamIdByUsername(String username) {
         return jpaRepository.findTeamIdByUsername(username);
     }
