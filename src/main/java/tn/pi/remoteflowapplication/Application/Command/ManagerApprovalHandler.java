@@ -14,6 +14,8 @@ import tn.pi.remoteflowapplication.application.port.out.WorkflowOrchestrationPor
 import tn.pi.remoteflowapplication.application.service.DomainEventPublisher;
 import tn.pi.remoteflowapplication.domain.exception.BusinessException;
 import tn.pi.remoteflowapplication.domain.state.RequestStatus;
+import org.springframework.context.ApplicationEventPublisher;
+import tn.pi.remoteflowapplication.domain.event.TeleworkRequestManagerApprovedEvent;
 import tn.pi.remoteflowapplication.application.port.out.TeleworkRequestRepository;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionSynchronization;
@@ -34,6 +36,7 @@ public class ManagerApprovalHandler {
     private final DomainEventPublisher domainEventPublisher;
     private final DocumentStoragePort documentService;
     private final ArchiveService archiveService;
+    private final ApplicationEventPublisher applicationEventPublisher;
 
     public ManagerApprovalHandler(
             TeleworkRequestRepository repository,
@@ -41,13 +44,15 @@ public class ManagerApprovalHandler {
             WorkflowTaskService workflowTaskService,
             DomainEventPublisher domainEventPublisher,
             DocumentStoragePort documentService,
-            ArchiveService archiveService) {
+            ArchiveService archiveService,
+            ApplicationEventPublisher applicationEventPublisher) {
         this.repository = repository;
         this.camundaWorkflowService = camundaWorkflowService;
         this.workflowTaskService = workflowTaskService;
         this.domainEventPublisher = domainEventPublisher;
         this.documentService = documentService;
         this.archiveService = archiveService;
+        this.applicationEventPublisher = applicationEventPublisher;
     }
 
     @Transactional
@@ -77,6 +82,7 @@ public class ManagerApprovalHandler {
 
         repository.save(request);
         domainEventPublisher.publishEvents(request);
+        applicationEventPublisher.publishEvent(new TeleworkRequestManagerApprovedEvent(request.getId(), request.getEmployeeId()));
         final Long archiveRequestId = request.getId();
 
         runAfterCommit(() -> {

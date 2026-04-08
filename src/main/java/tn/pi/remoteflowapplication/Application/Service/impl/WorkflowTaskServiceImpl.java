@@ -10,6 +10,8 @@ import tn.pi.remoteflowapplication.application.service.WorkflowTaskService;
 import tn.pi.remoteflowapplication.domain.entity.TaskEntity;
 import tn.pi.remoteflowapplication.domain.exception.BusinessException;
 import tn.pi.remoteflowapplication.infrastructure.persistence.SpringTaskJpaRepository;
+import org.springframework.context.ApplicationEventPublisher;
+import tn.pi.remoteflowapplication.domain.event.WorkflowTaskCreatedEvent;
 
 import java.time.Instant;
 import java.util.List;
@@ -21,9 +23,11 @@ public class WorkflowTaskServiceImpl implements WorkflowTaskService {
     private static final Logger logger = LoggerFactory.getLogger(WorkflowTaskServiceImpl.class);
 
     private final SpringTaskJpaRepository taskRepository;
+    private final ApplicationEventPublisher eventPublisher;
 
-    public WorkflowTaskServiceImpl(SpringTaskJpaRepository taskRepository) {
+    public WorkflowTaskServiceImpl(SpringTaskJpaRepository taskRepository, ApplicationEventPublisher eventPublisher) {
         this.taskRepository = taskRepository;
+        this.eventPublisher = eventPublisher;
     }
 
     @Override
@@ -40,7 +44,9 @@ public class WorkflowTaskServiceImpl implements WorkflowTaskService {
 
         TaskEntity task = new TaskEntity(requestId, jobKey, type, "PENDING", Instant.now());
         try {
-            return taskRepository.save(task);
+            TaskEntity savedTask = taskRepository.save(task);
+            eventPublisher.publishEvent(new WorkflowTaskCreatedEvent(requestId, type));
+            return savedTask;
         } catch (DataIntegrityViolationException ex) {
             return taskRepository.findByJobKey(jobKey).orElseThrow(() -> ex);
         }
