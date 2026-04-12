@@ -23,6 +23,8 @@ import tn.pi.remoteflowapplication.application.dto.PasswordUpdateRequiredRespons
 import tn.pi.remoteflowapplication.application.dto.RefreshRequest;
 import tn.pi.remoteflowapplication.application.port.out.UserRepository;
 import tn.pi.remoteflowapplication.application.service.ActivationTokenService;
+import tn.pi.remoteflowapplication.application.service.LoginProtectionService;
+import tn.pi.remoteflowapplication.domain.exception.AuthErrorCode;
 import tn.pi.remoteflowapplication.domain.exception.AuthenticationFailedException;
 import tn.pi.remoteflowapplication.domain.exception.BusinessException;
 import tn.pi.remoteflowapplication.infrastructure.security.KeycloakAuthService;
@@ -45,16 +47,19 @@ public class AuthController {
     private final KeycloakAuthService keycloakAuthService;
     private final ActivationTokenService activationTokenService;
     private final UserRepository userRepository;
+    private final LoginProtectionService loginProtectionService;
 
     public AuthController(
             KeycloakTokenService keycloakTokenService,
             KeycloakAuthService keycloakAuthService,
             ActivationTokenService activationTokenService,
-            UserRepository userRepository) {
+            UserRepository userRepository,
+            LoginProtectionService loginProtectionService) {
         this.keycloakTokenService = keycloakTokenService;
         this.keycloakAuthService = keycloakAuthService;
         this.activationTokenService = activationTokenService;
         this.userRepository = userRepository;
+        this.loginProtectionService = loginProtectionService;
     }
 
     @PostMapping("/login")
@@ -62,11 +67,13 @@ public class AuthController {
         logger.info("event=AUTH_LOGIN_ATTEMPT username={}", request.getUsername());
         try {
             AuthTokenResponse token = keycloakTokenService.login(request.getUsername(), request.getPassword());
+            loginProtectionService.onLoginSuccess(request.getUsername());
             logger.info("event=AUTH_LOGIN_SUCCESS username={} roleCount={}",
                     request.getUsername(),
                     token.getRoles() == null ? 0 : token.getRoles().size());
             return ResponseEntity.ok(token);
         } catch (AuthenticationFailedException ex) {
+            loginProtectionService.onLoginFailure(request.getUsername(), ex);
             logger.warn("event=AUTH_LOGIN_FAILURE username={} errorCode={} message={}",
                     request.getUsername(),
                     ex.getErrorCode(),
@@ -91,16 +98,16 @@ public class AuthController {
 
         String userId = keycloakAuthService.findUserIdByUsername(request.username())
                 .orElseThrow(() -> new AuthenticationFailedException(
+                        AuthErrorCode.AUTH_INVALID,
                         "Invalid username or temporary password.",
-                        "AUTHENTICATION_FAILED",
                         "invalid_grant",
                         "Temporary password validation failed",
                         HttpStatus.UNAUTHORIZED.value()));
 
         if (!keycloakAuthService.hasRequiredAction(userId, REQUIRED_ACTION_UPDATE_PASSWORD)) {
             throw new AuthenticationFailedException(
+                    AuthErrorCode.AUTH_INVALID,
                     "Invalid username or temporary password.",
-                    "AUTHENTICATION_FAILED",
                     "invalid_grant",
                     "Temporary password validation failed",
                     HttpStatus.UNAUTHORIZED.value());
@@ -216,8 +223,8 @@ public class AuthController {
         }
 
         throw new AuthenticationFailedException(
+                AuthErrorCode.AUTH_INVALID,
                 "Invalid username or temporary password.",
-                "AUTHENTICATION_FAILED",
                 "invalid_grant",
                 "Temporary password validation failed",
                 HttpStatus.UNAUTHORIZED.value());

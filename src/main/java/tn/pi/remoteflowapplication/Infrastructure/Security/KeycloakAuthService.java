@@ -264,10 +264,18 @@ public class KeycloakAuthService {
     }
 
     public void resetPassword(String userId, String password) {
+        resetPasswordInternal(userId, password, false);
+    }
+
+    public void setTemporaryPassword(String userId, String password) {
+        resetPasswordInternal(userId, password, true);
+    }
+
+    private void resetPasswordInternal(String userId, String password, boolean temporary) {
         org.keycloak.representations.idm.CredentialRepresentation cred = new org.keycloak.representations.idm.CredentialRepresentation();
         cred.setType(org.keycloak.representations.idm.CredentialRepresentation.PASSWORD);
         cred.setValue(password);
-        cred.setTemporary(false);
+        cred.setTemporary(temporary);
         realmResource().users().get(userId).resetPassword(cred);
     }
 
@@ -336,6 +344,29 @@ public class KeycloakAuthService {
         userResource.update(representation);
     }
 
+    public void addRequiredAction(String userId, String requiredAction) {
+        if (userId == null || userId.isBlank() || requiredAction == null || requiredAction.isBlank()) {
+            return;
+        }
+
+        var userResource = realmResource().users().get(userId);
+        UserRepresentation representation = userResource.toRepresentation();
+
+        List<String> requiredActions = new ArrayList<>(representation.getRequiredActions() == null
+                ? List.of()
+                : representation.getRequiredActions());
+
+        boolean alreadyPresent = requiredActions.stream()
+                .anyMatch(action -> requiredAction.equalsIgnoreCase(action));
+        if (alreadyPresent) {
+            return;
+        }
+
+        requiredActions.add(requiredAction);
+        representation.setRequiredActions(requiredActions);
+        userResource.update(representation);
+    }
+
     public boolean hasRequiredAction(String userId, String requiredAction) {
         if (userId == null || userId.isBlank() || requiredAction == null || requiredAction.isBlank()) {
             return false;
@@ -373,6 +404,46 @@ public class KeycloakAuthService {
                             .equalsIgnoreCase(credential.getType()));
         } catch (Exception ex) {
             logger.warn("event=KEYCLOAK_CREDENTIAL_STATE_CHECK_FAILED userId={} reason={}", userId, ex.getMessage());
+            return false;
+        }
+    }
+
+    public boolean isUserEnabled(String userId) {
+        if (userId == null || userId.isBlank()) {
+            return false;
+        }
+
+        try {
+            UserRepresentation representation = realmResource().users().get(userId).toRepresentation();
+            return representation != null && (representation.isEnabled() == null || representation.isEnabled());
+        } catch (Exception ex) {
+            logger.warn("event=KEYCLOAK_USER_ENABLED_CHECK_FAILED userId={} reason={}", userId, ex.getMessage());
+            return false;
+        }
+    }
+
+    public boolean isUserTemporarilyLocked(String userId) {
+        if (userId == null || userId.isBlank()) {
+            return false;
+        }
+
+        try {
+            Map<String, Object> status = realmResource().attackDetection().bruteForceUserStatus(userId);
+            if (status == null) {
+                return false;
+            }
+
+            Object disabled = status.get("disabled");
+            if (disabled instanceof Boolean booleanValue) {
+                return booleanValue;
+            }
+            if (disabled instanceof String stringValue) {
+                return Boolean.parseBoolean(stringValue);
+            }
+
+            return false;
+        } catch (Exception ex) {
+            logger.warn("event=KEYCLOAK_USER_TEMP_LOCK_CHECK_FAILED userId={} reason={}", userId, ex.getMessage());
             return false;
         }
     }

@@ -7,6 +7,8 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RestController;
+import tn.pi.remoteflowapplication.domain.exception.AuthErrorCode;
+import tn.pi.remoteflowapplication.domain.exception.AuthenticationFailedException;
 import tn.pi.remoteflowapplication.domain.exception.ExternalServiceException;
 import tn.pi.remoteflowapplication.domain.exception.KeycloakConflictException;
 import tn.pi.remoteflowapplication.domain.exception.UserAlreadyExistsException;
@@ -54,6 +56,24 @@ class GlobalExceptionHandlerTest {
                 .andExpect(jsonPath("$.message").value("Keycloak unavailable."));
     }
 
+    @Test
+    void shouldReturnEnumAuthCodeForAuthenticationFailedException() throws Exception {
+        mockMvc.perform(get("/test/errors/auth-temp-lock")
+                        .accept(MediaType.APPLICATION_JSON))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.error").value("AUTH_TEMP_LOCK"))
+                .andExpect(jsonPath("$.message").value("Too many failed attempts."));
+    }
+
+    @Test
+    void shouldPreserveLegacyNonAuthErrorCodeForAuthenticationFailedException() throws Exception {
+        mockMvc.perform(get("/test/errors/auth-legacy-code")
+                        .accept(MediaType.APPLICATION_JSON))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.error").value("ACTIVATION_TOKEN_INVALID"))
+                .andExpect(jsonPath("$.message").value("Activation token is invalid or expired."));
+    }
+
     @RestController
     static class ErrorThrowingController {
 
@@ -70,6 +90,21 @@ class GlobalExceptionHandlerTest {
         @GetMapping("/test/errors/external-service")
         void externalService() {
             throw new ExternalServiceException("Keycloak unavailable.");
+        }
+
+        @GetMapping("/test/errors/auth-temp-lock")
+        void authTempLock() {
+            throw new AuthenticationFailedException(AuthErrorCode.AUTH_TEMP_LOCK, "Too many failed attempts.");
+        }
+
+        @GetMapping("/test/errors/auth-legacy-code")
+        void authLegacyCode() {
+            throw new AuthenticationFailedException(
+                    "Activation token is invalid or expired.",
+                    "ACTIVATION_TOKEN_INVALID",
+                    null,
+                    null,
+                    401);
         }
     }
 }

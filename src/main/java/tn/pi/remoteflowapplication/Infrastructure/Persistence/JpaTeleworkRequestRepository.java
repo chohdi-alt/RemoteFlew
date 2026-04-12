@@ -39,6 +39,11 @@ public class JpaTeleworkRequestRepository implements TeleworkRequestRepository {
     }
 
     @Override
+    public Optional<TeleworkRequest> findByIdWithAuditLogs(Long id) {
+        return jpaRepository.findByIdWithAuditLogs(id);
+    }
+
+    @Override
     public Optional<TeleworkRequest> findByProcessInstanceId(String processInstanceId) {
         return jpaRepository.findByProcessInstanceId(processInstanceId);
     }
@@ -54,11 +59,11 @@ public class JpaTeleworkRequestRepository implements TeleworkRequestRepository {
             LocalDate weekStart,
             LocalDate weekEnd) {
         return entityManager.createQuery(
-                        "SELECT r FROM TeleworkRequest r " +
-                                "WHERE r.employeeId = :employeeId " +
-                                "AND r.startDate <= :weekEnd " +
-                                "AND r.endDate >= :weekStart",
-                        TeleworkRequest.class)
+                "SELECT r FROM TeleworkRequest r " +
+                        "WHERE r.employeeId = :employeeId " +
+                        "AND r.startDate <= :weekEnd " +
+                        "AND r.endDate >= :weekStart",
+                TeleworkRequest.class)
                 .setParameter("employeeId", employeeId)
                 .setParameter("weekStart", weekStart)
                 .setParameter("weekEnd", weekEnd)
@@ -83,10 +88,10 @@ public class JpaTeleworkRequestRepository implements TeleworkRequestRepository {
         }
 
         entityManager.createQuery("""
-                        update TeleworkRequest r
-                        set r.employeeId = :currentEmployeeId
-                        where r.employeeId = :previousEmployeeId
-                        """)
+                update TeleworkRequest r
+                set r.employeeId = :currentEmployeeId
+                where r.employeeId = :previousEmployeeId
+                """)
                 .setParameter("previousEmployeeId", previous)
                 .setParameter("currentEmployeeId", current)
                 .executeUpdate();
@@ -106,11 +111,10 @@ public class JpaTeleworkRequestRepository implements TeleworkRequestRepository {
     @Transactional(readOnly = true)
     public List<TeleworkRequest> findArchivedRequests() {
         List<TeleworkRequest> archivedRequests = entityManager.createQuery(
-                        "SELECT r FROM TeleworkRequest r WHERE r.status IN ('APPROVED', 'REJECTED') ORDER BY r.submittedAt DESC",
-                        TeleworkRequest.class)
+                "SELECT r FROM TeleworkRequest r WHERE r.status IN ('APPROVED', 'REJECTED') ORDER BY r.submittedAt DESC",
+                TeleworkRequest.class)
                 .getResultList();
-        archivedRequests.forEach(r ->
-                log.info("[REPO_FETCH] id={} archiveNodeId={}", r.getId(), r.getArchiveNodeId()));
+        archivedRequests.forEach(r -> log.info("[REPO_FETCH] id={} archiveNodeId={}", r.getId(), r.getArchiveNodeId()));
         return archivedRequests;
     }
 
@@ -123,7 +127,8 @@ public class JpaTeleworkRequestRepository implements TeleworkRequestRepository {
         log.info("[REPO_UPDATE_RESULT] id={} rowsUpdated={}", requestId, updated);
 
         if (updated == 0) {
-            throw new RuntimeException("PERSISTENCE FAILURE: ARCHIVE_NODE_ID NOT SAVED in DB for requestId=" + requestId);
+            throw new RuntimeException(
+                    "PERSISTENCE FAILURE: ARCHIVE_NODE_ID NOT SAVED in DB for requestId=" + requestId);
         }
         return updated;
     }

@@ -12,6 +12,8 @@ public interface TeleworkRequestRepository {
 
     Optional<TeleworkRequest> findById(Long id);
 
+    Optional<TeleworkRequest> findByIdWithAuditLogs(Long id);
+
     Optional<TeleworkRequest> findByProcessInstanceId(String processInstanceId);
 
     List<TeleworkRequest> findByEmployeeId(String employeeId);

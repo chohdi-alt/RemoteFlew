@@ -20,9 +20,7 @@ public class WebSocketMessageSecurityConfig {
         messages
                 .nullDestMatcher().permitAll()
                 .simpTypeMatchers(SimpMessageType.CONNECT, SimpMessageType.DISCONNECT, SimpMessageType.OTHER).permitAll()
-                .simpSubscribeDestMatchers("/user/queue/signals").authenticated()
-                .simpSubscribeDestMatchers("/topic/roles/MANAGER").hasRole("MANAGER")
-                .simpSubscribeDestMatchers("/topic/roles/HR").hasRole("HR")
+                .simpTypeMatchers(SimpMessageType.SUBSCRIBE).authenticated()
                 .anyMessage().denyAll();
         return messages.build();
     }

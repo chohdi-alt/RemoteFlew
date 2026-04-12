@@ -5,7 +5,6 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.core.task.TaskExecutor;
 import org.springframework.dao.DataIntegrityViolationException;
 import tn.pi.remoteflowapplication.application.dto.CreateUserRequest;
 import tn.pi.remoteflowapplication.application.port.out.UserRepository;
@@ -40,20 +39,17 @@ class KeycloakUserServiceTest {
     private KeycloakUserOnboardingTransactionService keycloakUserOnboardingTransactionService;
 
     @Mock
-    private EmailNotificationService emailNotificationService;
+    private AccountActivationService accountActivationService;
 
     private KeycloakUserService service;
 
     @BeforeEach
     void setUp() {
-        TaskExecutor sameThreadExecutor = Runnable::run;
         service = new KeycloakUserService(
                 keycloakAuthService,
                 userRepository,
                 keycloakUserOnboardingTransactionService,
-                emailNotificationService,
-                sameThreadExecutor,
-                "http://localhost:4200/activate");
+                accountActivationService);
     }
 
     @Test
@@ -125,6 +121,7 @@ class KeycloakUserServiceTest {
         assertSame(syncedUser, createdUser);
         verify(keycloakAuthService, never()).setRealmRoles(anyString(), any());
         verify(keycloakAuthService).assignUserToManagedGroup(anyString(), anyString(), any());
+        verify(accountActivationService).dispatchActivationEmail(syncedUser, "raw-token", "USER_CREATE");
     }
 
     @Test
@@ -158,5 +155,6 @@ class KeycloakUserServiceTest {
         verify(keycloakAuthService).setRealmRoles("kc-003", Set.of("EMPLOYEE"));
         verify(keycloakAuthService).assignUserToManagedGroup("kc-003", "employees", Set.of("employees", "managers", "hr", "admins"));
         verify(keycloakAuthService, never()).deleteUser("kc-003");
+        verify(accountActivationService).dispatchActivationEmail(syncedUser, "raw-token-2", "USER_CREATE");
     }
 }

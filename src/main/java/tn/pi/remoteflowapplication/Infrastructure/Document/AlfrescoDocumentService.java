@@ -11,6 +11,9 @@ import org.springframework.web.client.RestTemplate;
 import org.springframework.web.multipart.MultipartFile;
 import tn.pi.remoteflowapplication.application.port.out.DocumentStoragePort;
 
+import org.apache.commons.io.FilenameUtils;
+import org.apache.tika.Tika;
+import java.nio.file.Paths;
 import java.io.IOException;
 import java.util.List;
 import java.util.Map;
@@ -68,12 +71,39 @@ public class AlfrescoDocumentService implements DocumentStoragePort {
 
     @Override
     public String upload(MultipartFile file, String parentNodeId) throws IOException {
+        String filename = file.getOriginalFilename();
+
+        // Step 2 — Backend Extension Validation
+        List<String> allowedExtensions = List.of("pdf", "png", "jpg", "jpeg");
+        String ext = FilenameUtils.getExtension(filename).toLowerCase();
+        if (!allowedExtensions.contains(ext)) {
+            throw new IllegalArgumentException("Invalid file type");
+        }
+
+        // Step 3 — MIME Type Validation
+        String mimeType = file.getContentType();
+        List<String> allowedMime = List.of("application/pdf", "image/png", "image/jpeg");
+        if (!allowedMime.contains(mimeType)) {
+            throw new IllegalArgumentException("Invalid MIME type");
+        }
+
+        // Step 4 — Magic Byte Validation
+        Tika tika = new Tika();
+        String detectedType = tika.detect(file.getInputStream());
+        if (!allowedMime.contains(detectedType)) {
+            throw new IllegalArgumentException("Invalid file content");
+        }
+
+        // Step 5 — Safe Filename Handling
+        String safeFilename = Paths.get(filename).getFileName().toString();
+        safeFilename = safeFilename.replaceAll("[^a-zA-Z0-9\\.\\-_]", "_");
+        final String finalSafeFilename = safeFilename;
+
         String normalizedParentNodeId = normalizeNodeId(parentNodeId);
         String url = baseUrl + "/api/-default-/public/alfresco/versions/1/nodes/"
                 + normalizedParentNodeId + "/children";
 
         final byte[] bytes = file.getBytes();
-        final String filename = file.getOriginalFilename();
 
         log.info("Calling Alfresco [UPLOAD]: {} | Method: POST", url);
         try {
@@ -81,7 +111,7 @@ public class AlfrescoDocumentService implements DocumentStoragePort {
             body.add("filedata", new ByteArrayResource(bytes) {
                 @Override
                 public String getFilename() {
-                    return filename;
+                    return finalSafeFilename;
                 }
             });
 

@@ -3,6 +3,7 @@ package tn.pi.remoteflowapplication.infrastructure.security;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.keycloak.admin.client.Keycloak;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -13,15 +14,22 @@ import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.util.MultiValueMap;
 import org.springframework.web.reactive.function.BodyInserters;
 import org.springframework.web.reactive.function.client.WebClient;
+import tn.pi.remoteflowapplication.config.LoginProtectionProperties;
 import tn.pi.remoteflowapplication.application.dto.AuthTokenResponse;
+import tn.pi.remoteflowapplication.domain.exception.AuthErrorCode;
 import tn.pi.remoteflowapplication.domain.exception.AuthenticationFailedException;
-
+import org.springframework.web.context.request.RequestContextHolder;
+import org.springframework.web.context.request.ServletRequestAttributes;
+import jakarta.servlet.http.HttpServletRequest;
 import java.time.Duration;
+
+import static net.logstash.logback.argument.StructuredArguments.kv;
 import java.util.Base64;
 import java.util.Collection;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 
 @Service
@@ -33,6 +41,9 @@ public class KeycloakTokenService {
 
     private final WebClient webClient;
     private final ObjectMapper objectMapper;
+    private final KeycloakAuthService keycloakAuthService;
+    private final Keycloak keycloak;
+    private final LoginProtectionProperties loginProtectionProperties;
 
     @Value("${keycloak.auth-server-url}")
     private String authServerUrl;
@@ -46,9 +57,17 @@ public class KeycloakTokenService {
     @Value("${keycloak.client-secret}")
     private String clientSecret;
 
-    public KeycloakTokenService(WebClient webClient, ObjectMapper objectMapper) {
+    public KeycloakTokenService(
+            WebClient webClient,
+            ObjectMapper objectMapper,
+            KeycloakAuthService keycloakAuthService,
+            Keycloak keycloak,
+            LoginProtectionProperties loginProtectionProperties) {
         this.webClient = webClient;
         this.objectMapper = objectMapper;
+        this.keycloakAuthService = keycloakAuthService;
+        this.keycloak = keycloak;
+        this.loginProtectionProperties = loginProtectionProperties;
     }
 
     public AuthTokenResponse login(String username, String password) {
@@ -115,7 +134,7 @@ public class KeycloakTokenService {
                 KeycloakTokenPayload payload = objectMapper.readValue(responseBody, KeycloakTokenPayload.class);
 
                 if (payload.accessToken == null || payload.accessToken.isBlank()) {
-                    throw new AuthenticationFailedException("Keycloak returned an empty access token");
+                    throw new AuthenticationFailedException(AuthErrorCode.AUTH_INVALID, "Authentication failed.");
                 }
 
                 return new AuthTokenResponse(
@@ -130,7 +149,7 @@ public class KeycloakTokenService {
             if (response.status.is4xxClientError()) {
                 KeycloakError keycloakError = parseKeycloakError(responseBody);
                 FailureAnalysis analysis = analyzeKeycloakFailure(keycloakError, responseBody);
-                boolean passwordUpdateRequired = isPasswordUpdateRequired(status, keycloakError, analysis);
+                AuthErrorCode authErrorCode = resolveAuthErrorCode(grantType, username, status, keycloakError, analysis);
 
                 logger.warn(
                         "event=AUTH_LOGIN_FAILURE keycloak.token.rejected requestId={} clientId={} username={} grantType={} status={} error={} description={} classification={} recommendedAction={}",
@@ -146,10 +165,8 @@ public class KeycloakTokenService {
                 logger.debug("keycloak.token.rejected.rawBody requestId={} body={}", requestId, responseBody);
 
                 throw new AuthenticationFailedException(
-                        passwordUpdateRequired
-                                ? "Password update required before login."
-                                : "Invalid credentials or Keycloak rejected password grant",
-                        passwordUpdateRequired ? "PASSWORD_UPDATE_REQUIRED" : "AUTHENTICATION_FAILED",
+                        authErrorCode,
+                        buildSafeAuthFailureMessage(authErrorCode),
                         keycloakError.error,
                         keycloakError.errorDescription,
                         status);
@@ -258,6 +275,204 @@ public class KeycloakTokenService {
         return baseMessage + " [" + analysis.classification + "]";
     }
 
+    private AuthErrorCode resolveAuthErrorCode(
+            String grantType,
+            String username,
+            int status,
+            KeycloakError keycloakError,
+            FailureAnalysis analysis) {
+        if (isPasswordUpdateRequired(status, keycloakError, analysis)) {
+            logger.warn("AUTH_EVENT",
+                kv("event", AuthErrorCode.PASSWORD_UPDATE_REQUIRED.name()),
+                kv("event_normalized", AuthErrorCode.PASSWORD_UPDATE_REQUIRED.getNormalizedName()),
+                kv("category", "AUTH"),
+                kv("outcome", "FAILURE"),
+                kv("user", username),
+                kv("status", status),
+                kv("ip", getClientIp())
+            );
+            return AuthErrorCode.PASSWORD_UPDATE_REQUIRED;
+        }
+
+        String keycloakErrorCode = normalizeValue(keycloakError == null ? null : keycloakError.error);
+        if ("temporarily_disabled".equals(keycloakErrorCode) || "too_many_attempts".equals(keycloakErrorCode)) {
+            logger.warn("AUTH_EVENT",
+                kv("event", AuthErrorCode.AUTH_TEMP_LOCK.name()),
+                kv("event_normalized", AuthErrorCode.AUTH_TEMP_LOCK.getNormalizedName()),
+                kv("category", "AUTH"),
+                kv("outcome", "FAILURE"),
+                kv("user", username),
+                kv("method", "api_error_code"),
+                kv("ip", getClientIp())
+            );
+            return AuthErrorCode.AUTH_TEMP_LOCK;
+        }
+        if ("user_disabled".equals(keycloakErrorCode) || "account_disabled".equals(keycloakErrorCode)) {
+            logger.warn("AUTH_EVENT",
+                kv("event", AuthErrorCode.AUTH_ACCOUNT_DISABLED.name()),
+                kv("event_normalized", AuthErrorCode.AUTH_ACCOUNT_DISABLED.getNormalizedName()),
+                kv("category", "AUTH"),
+                kv("outcome", "FAILURE"),
+                kv("user", username),
+                kv("method", "api_error_code"),
+                kv("ip", getClientIp())
+            );
+            return AuthErrorCode.AUTH_ACCOUNT_DISABLED;
+        }
+
+        if (!"password".equalsIgnoreCase(grantType)) {
+            return AuthErrorCode.AUTH_INVALID;
+        }
+
+        String normalizedUsername = username == null ? null : username.trim();
+        if (normalizedUsername == null || normalizedUsername.isBlank()) {
+            return AuthErrorCode.AUTH_INVALID;
+        }
+
+        try {
+            Optional<String> userId = keycloakAuthService.findUserIdByUsername(normalizedUsername);
+            if (userId.isEmpty()) {
+                return AuthErrorCode.AUTH_INVALID;
+            }
+
+            String resolvedUserId = userId.get();
+
+            // Phase 1: Direct lock check to fix misclassification as disabled
+            if (isUserTemporarilyLocked(resolvedUserId)) {
+                var lockStatus = getLockStatus(resolvedUserId);
+                String ip = getClientIp();
+                logger.warn("AUTH_EVENT",
+                    kv("event", AuthErrorCode.AUTH_TEMP_LOCK.name()),
+                    kv("event_normalized", AuthErrorCode.AUTH_TEMP_LOCK.getNormalizedName()),
+                    kv("category", "AUTH"),
+                    kv("outcome", "FAILURE"),
+                    kv("user", normalizedUsername),
+                    kv("retryAfter", lockStatus.retryAfter()),
+                    kv("failures", lockStatus.failures()),
+                    kv("ip", ip)
+                );
+
+                throw new AuthenticationFailedException(
+                        AuthErrorCode.AUTH_TEMP_LOCK,
+                        "Too many failed attempts.",
+                        lockStatus.retryAfter());
+            }
+
+            if (!keycloakAuthService.isUserEnabled(resolvedUserId)) {
+                logger.warn("AUTH_EVENT",
+                    kv("event", AuthErrorCode.AUTH_ACCOUNT_DISABLED.name()),
+                    kv("event_normalized", AuthErrorCode.AUTH_ACCOUNT_DISABLED.getNormalizedName()),
+                    kv("category", "AUTH"),
+                    kv("outcome", "FAILURE"),
+                    kv("user", normalizedUsername),
+                    kv("method", "user_check"),
+                    kv("ip", getClientIp())
+                );
+                return AuthErrorCode.AUTH_ACCOUNT_DISABLED;
+            }
+        } catch (AuthenticationFailedException ex) {
+            throw ex;
+        } catch (Exception ex) {
+            logger.warn("AUTH_EVENT",
+                kv("event", "AUTH_ERROR"),
+                kv("user", normalizedUsername),
+                kv("reason", ex.getMessage()),
+                kv("ip", getClientIp())
+            );
+        }
+
+        logger.warn("AUTH_EVENT",
+            kv("event", AuthErrorCode.AUTH_INVALID.name()),
+            kv("event_normalized", AuthErrorCode.AUTH_INVALID.getNormalizedName()),
+            kv("category", "AUTH"),
+            kv("outcome", "FAILURE"),
+            kv("user", normalizedUsername),
+            kv("ip", getClientIp())
+        );
+        return AuthErrorCode.AUTH_INVALID;
+    }
+
+    private record LockStatus(long retryAfter, int failures) {}
+
+    private LockStatus getLockStatus(String userId) {
+        try {
+            var status = keycloak.realm(realm)
+                    .attackDetection()
+                    .bruteForceUserStatus(userId);
+
+            if (status == null) {
+                return new LockStatus(60, 0);
+            }
+
+            Object numFailuresObj = status.get("numFailures");
+            int failures = 0;
+            if (numFailuresObj instanceof Integer intVal) {
+                failures = intVal;
+            } else if (numFailuresObj instanceof String strVal) {
+                try {
+                    failures = Integer.parseInt(strVal);
+                } catch (NumberFormatException ignored) {
+                }
+            }
+
+            int waitIncrement = loginProtectionProperties.getKeycloak().getWaitIncrementSeconds();
+            int maxWait = loginProtectionProperties.getKeycloak().getMaxWaitSeconds();
+
+            long retryAfter = failures <= 0 ? waitIncrement : Math.min((long) failures * waitIncrement, maxWait);
+            return new LockStatus(retryAfter, failures);
+        } catch (Exception e) {
+            return new LockStatus(60, 0);
+        }
+    }
+
+    private boolean isUserTemporarilyLocked(String userId) {
+        try {
+            var status = keycloak.realm(realm)
+                    .attackDetection()
+                    .bruteForceUserStatus(userId);
+
+            if (status == null) {
+                return false;
+            }
+
+            Object disabled = status.get("disabled");
+            if (disabled instanceof Boolean booleanValue) {
+                return booleanValue;
+            }
+            if (disabled instanceof String stringValue) {
+                return Boolean.parseBoolean(stringValue);
+            }
+            return false;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    private String getClientIp() {
+        try {
+            ServletRequestAttributes attrs = (ServletRequestAttributes) RequestContextHolder.getRequestAttributes();
+            if (attrs != null) {
+                HttpServletRequest request = attrs.getRequest();
+                String xfHeader = request.getHeader("X-Forwarded-For");
+                if (xfHeader == null || xfHeader.isBlank()) {
+                    return request.getRemoteAddr();
+                }
+                return xfHeader.split(",")[0].trim();
+            }
+        } catch (Exception ignored) {
+        }
+        return "unknown";
+    }
+
+    private String buildSafeAuthFailureMessage(AuthErrorCode authErrorCode) {
+        return switch (authErrorCode) {
+            case AUTH_TEMP_LOCK -> "Too many failed attempts.";
+            case AUTH_ACCOUNT_DISABLED -> "Account is disabled.";
+            case PASSWORD_UPDATE_REQUIRED -> "Password update required before login.";
+            case AUTH_INVALID -> "Invalid credentials.";
+        };
+    }
+
     private String redactTokenResponseBody(String responseBody) {
         if (responseBody == null) {
             return null;
@@ -289,6 +504,13 @@ public class KeycloakTokenService {
             return s;
         }
         return value == null ? null : String.valueOf(value);
+    }
+
+    private String normalizeValue(String value) {
+        if (value == null) {
+            return "";
+        }
+        return value.trim().toLowerCase(Locale.ROOT);
     }
 
     private String buildTokenEndpoint() {

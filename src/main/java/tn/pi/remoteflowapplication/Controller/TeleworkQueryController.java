@@ -89,8 +89,10 @@ public class TeleworkQueryController {
         ByteArrayResource resource = new ByteArrayResource(file.content());
 
         return ResponseEntity.ok()
-                .contentType(MediaType.APPLICATION_PDF)
-                .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + file.fileName() + "\"")
+                .contentType(MediaType.APPLICATION_OCTET_STREAM)
+                .header("X-Content-Type-Options", "nosniff")
+                .header("Content-Security-Policy", "default-src 'none';")
+                .header(HttpHeaders.CONTENT_DISPOSITION, org.springframework.http.ContentDisposition.attachment().filename(file.fileName()).build().toString())
                 .contentLength(file.content().length)
                 .body(resource);
     }

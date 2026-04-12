@@ -11,8 +11,10 @@ import org.springframework.transaction.annotation.Transactional;
 import tn.pi.remoteflowapplication.application.dto.AdminUserDTO;
 import tn.pi.remoteflowapplication.application.dto.CreateUserRequest;
 import tn.pi.remoteflowapplication.application.port.out.UserRepository;
+import tn.pi.remoteflowapplication.application.service.AccountActivationService;
 import tn.pi.remoteflowapplication.application.service.AdminUserService;
 import tn.pi.remoteflowapplication.application.service.KeycloakUserService;
+import tn.pi.remoteflowapplication.application.service.LoginProtectionService;
 import tn.pi.remoteflowapplication.domain.entity.User;
 import tn.pi.remoteflowapplication.domain.exception.BusinessException;
 import tn.pi.remoteflowapplication.infrastructure.security.KeycloakAuthService;
@@ -21,26 +23,34 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Set;
+import java.util.UUID;
 
 @Service
 public class AdminUserServiceImpl implements AdminUserService {
 
     private static final Logger logger = LoggerFactory.getLogger(AdminUserServiceImpl.class);
+    private static final String REQUIRED_ACTION_UPDATE_PASSWORD = "UPDATE_PASSWORD";
 
     private final KeycloakAuthService keycloakAuthService;
     private final UserRepository userRepository;
     private final tn.pi.remoteflowapplication.application.service.TeamService teamService;
     private final KeycloakUserService keycloakUserService;
+    private final AccountActivationService accountActivationService;
+    private final LoginProtectionService loginProtectionService;
 
     public AdminUserServiceImpl(
             KeycloakAuthService keycloakAuthService,
             UserRepository userRepository,
             tn.pi.remoteflowapplication.application.service.TeamService teamService,
-            KeycloakUserService keycloakUserService) {
+            KeycloakUserService keycloakUserService,
+            AccountActivationService accountActivationService,
+            LoginProtectionService loginProtectionService) {
         this.keycloakAuthService = keycloakAuthService;
         this.userRepository = userRepository;
         this.teamService = teamService;
         this.keycloakUserService = keycloakUserService;
+        this.accountActivationService = accountActivationService;
+        this.loginProtectionService = loginProtectionService;
     }
 
     @Override
@@ -68,7 +78,23 @@ public class AdminUserServiceImpl implements AdminUserService {
         User user = userRepository.findByKeycloakId(externalId)
                 .orElseThrow(() -> new BusinessException("User not found: " + externalId));
 
+        boolean wasActive = user.isActif();
         keycloakAuthService.setEnabled(externalId, active);
+
+        if (active && !wasActive) {
+            keycloakAuthService.setTemporaryPassword(externalId, generateTemporaryPassword());
+            keycloakAuthService.addRequiredAction(externalId, REQUIRED_ACTION_UPDATE_PASSWORD);
+            accountActivationService.issueTokenAndDispatch(user, "ADMIN_REACTIVATION");
+            loginProtectionService.clearTracking(user.getUsername());
+            logger.info(
+                    "event=ADMIN_USER_REACTIVATED_RESET_LINK_SENT externalId={} username={}",
+                    externalId,
+                    user.getUsername());
+        } else if (!active) {
+            loginProtectionService.clearTracking(user.getUsername());
+            logger.info("event=ADMIN_USER_DEACTIVATED externalId={} username={}", externalId, user.getUsername());
+        }
+
         user.updateActivation(active);
         User saved = userRepository.save(user);
 
@@ -173,5 +199,9 @@ public class AdminUserServiceImpl implements AdminUserService {
             normalized.add(value);
         }
         return normalized;
+    }
+
+    private String generateTemporaryPassword() {
+        return UUID.randomUUID().toString() + "A!";
     }
 }

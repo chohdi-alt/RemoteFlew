@@ -45,8 +45,8 @@ services:
       - CAMUNDA_OPERATE_ZEEBE_GATEWAYADDRESS=zeebe:26500
       - CAMUNDA_OPERATE_ELASTICSEARCH_URL=http://elasticsearch:9200
       - CAMUNDA_OPERATE_ZEEBE_ELASTICSEARCH_URL=http://elasticsearch:9200
-      - CAMUNDA_OPERATE_USERNAME=demo
-      - CAMUNDA_OPERATE_PASSWORD=demo
+      - CAMUNDA_OPERATE_USERNAME=${CAMUNDA_OPERATE_USERNAME:-demo}
+      - CAMUNDA_OPERATE_PASSWORD=${CAMUNDA_OPERATE_PASSWORD:-demo}
     depends_on:
       - zeebe
       - elasticsearch

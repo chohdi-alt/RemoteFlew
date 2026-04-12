@@ -4,6 +4,7 @@ import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Service;
 import tn.pi.remoteflowapplication.application.dto.AuditHistoryDTO;
 import tn.pi.remoteflowapplication.application.dto.TeleworkStatusDTO;
+import tn.pi.remoteflowapplication.application.port.out.TeamRepository;
 import tn.pi.remoteflowapplication.domain.entity.TeleworkRequest;
 import tn.pi.remoteflowapplication.domain.exception.ForbiddenOperationException;
 import tn.pi.remoteflowapplication.domain.state.RequestStatus;
@@ -20,14 +21,17 @@ public class TeleworkStatusQueryService {
 
         private final TeleworkRequestRepository repository;
         private final UserRepository userRepository;
+        private final TeamRepository teamRepository;
         private final tn.pi.remoteflowapplication.application.port.out.DocumentStoragePort documentStoragePort;
 
         public TeleworkStatusQueryService(
                         TeleworkRequestRepository repository,
                         UserRepository userRepository,
+                        TeamRepository teamRepository,
                         tn.pi.remoteflowapplication.application.port.out.DocumentStoragePort documentStoragePort) {
                 this.repository = repository;
                 this.userRepository = userRepository;
+                this.teamRepository = teamRepository;
                 this.documentStoragePort = documentStoragePort;
         }
 
@@ -140,8 +144,10 @@ public class TeleworkStatusQueryService {
                         org.springframework.core.io.ByteArrayResource resource = new org.springframework.core.io.ByteArrayResource(fileData);
                         
                         return org.springframework.http.ResponseEntity.ok()
-                                .contentType(org.springframework.http.MediaType.APPLICATION_PDF)
-                                .header(org.springframework.http.HttpHeaders.CONTENT_DISPOSITION, "inline; filename=\"justificatif.pdf\"")
+                                .contentType(org.springframework.http.MediaType.APPLICATION_OCTET_STREAM)
+                                .header("X-Content-Type-Options", "nosniff")
+                                .header("Content-Security-Policy", "default-src 'none';")
+                                .header(org.springframework.http.HttpHeaders.CONTENT_DISPOSITION, org.springframework.http.ContentDisposition.attachment().filename("justificatif.pdf").build().toString())
                                 .contentLength(fileData.length)
                                 .body(resource);
                 } catch (Exception e) {
@@ -149,8 +155,9 @@ public class TeleworkStatusQueryService {
                 }
         }
 
+        @org.springframework.transaction.annotation.Transactional(readOnly = true)
         public List<AuditHistoryDTO> getRequestHistory(Long requestId, Authentication authentication) {
-                var request = repository.findById(requestId)
+                var request = repository.findByIdWithAuditLogs(requestId)
                                 .orElseThrow(() -> new ResourceNotFoundException("Request not found"));
                 enforceHistoryOwnership(request, authentication);
 
@@ -168,15 +175,44 @@ public class TeleworkStatusQueryService {
                         throw new ForbiddenOperationException("Unauthenticated");
                 }
 
-                boolean isEmployee = hasRole(authentication, "ROLE_EMPLOYEE");
-                boolean hasPrivilegedRole = hasRole(authentication, "ROLE_MANAGER")
-                                || hasRole(authentication, "ROLE_HR")
-                                || hasRole(authentication, "ROLE_ADMIN");
+                String username = authentication.getName();
 
-                if (isEmployee && !hasPrivilegedRole
-                                && !request.getEmployeeId().equals(authentication.getName())) {
-                        throw new ForbiddenOperationException("You are not allowed to view another employee history.");
+                if (hasRole(authentication, "ROLE_ADMIN") || hasRole(authentication, "ROLE_HR")) {
+                        return;
                 }
+
+                if (hasRole(authentication, "ROLE_MANAGER")) {
+                        if (!isUserInManagerScope(request.getEmployeeId(), username)) {
+                                throw new ForbiddenOperationException("Manager cannot access this user's history.");
+                        }
+                        return;
+                }
+
+                boolean isUser = hasRole(authentication, "ROLE_USER") || hasRole(authentication, "ROLE_EMPLOYEE");
+                if (isUser) {
+                        if (!request.getEmployeeId().equals(username)) {
+                                throw new ForbiddenOperationException("User cannot access others.");
+                        }
+                        return;
+                }
+
+                throw new ForbiddenOperationException("You are not allowed to access this request history.");
+        }
+
+        private boolean isUserInManagerScope(String targetUser, String managerUsername) {
+                Long targetTeamId = userRepository.findTeamIdByExternalId(targetUser).orElse(null);
+                if (targetTeamId == null) {
+                        return false;
+                }
+
+                boolean managesTargetTeam = teamRepository.findManagedTeamIdsByUsername(managerUsername).stream()
+                                .anyMatch(targetTeamId::equals);
+                if (managesTargetTeam) {
+                        return true;
+                }
+
+                Long managerTeamId = userRepository.findTeamIdByExternalId(managerUsername).orElse(null);
+                return managerTeamId != null && managerTeamId.equals(targetTeamId);
         }
 
         private boolean hasRole(Authentication authentication, String role) {

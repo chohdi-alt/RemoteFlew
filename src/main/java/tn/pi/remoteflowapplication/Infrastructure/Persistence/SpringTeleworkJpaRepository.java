@@ -23,6 +23,13 @@ public interface SpringTeleworkJpaRepository
         Optional<TeleworkRequest> findByProcessInstanceId(String processInstanceId);
 
         @Query("""
+                        select distinct r from TeleworkRequest r
+                        left join fetch r.auditLogs
+                        where r.id = :id
+                        """)
+        Optional<TeleworkRequest> findByIdWithAuditLogs(@Param("id") Long id);
+
+        @Query("""
                         select r.status as status, count(r) as count
                         from TeleworkRequest r
                         group by r.status

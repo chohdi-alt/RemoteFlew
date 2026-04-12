@@ -2,12 +2,7 @@ package tn.pi.remoteflowapplication.application.service;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Qualifier;
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.core.task.TaskExecutor;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.support.TransactionSynchronization;
-import org.springframework.transaction.support.TransactionSynchronizationManager;
 import tn.pi.remoteflowapplication.application.dto.CreateUserRequest;
 import tn.pi.remoteflowapplication.application.port.out.UserRepository;
 import tn.pi.remoteflowapplication.domain.entity.User;
@@ -16,8 +11,6 @@ import tn.pi.remoteflowapplication.domain.exception.ExternalServiceException;
 import tn.pi.remoteflowapplication.domain.exception.UserAlreadyExistsException;
 import tn.pi.remoteflowapplication.infrastructure.security.KeycloakAuthService;
 
-import java.net.URLEncoder;
-import java.nio.charset.StandardCharsets;
 import java.util.LinkedHashSet;
 import java.util.Locale;
 import java.util.Map;
@@ -40,23 +33,17 @@ public class KeycloakUserService {
     private final KeycloakAuthService keycloakAuthService;
     private final UserRepository userRepository;
     private final KeycloakUserOnboardingTransactionService keycloakUserOnboardingTransactionService;
-    private final EmailNotificationService emailNotificationService;
-    private final TaskExecutor notificationTaskExecutor;
-    private final String activationLinkBase;
+    private final AccountActivationService accountActivationService;
 
     public KeycloakUserService(
             KeycloakAuthService keycloakAuthService,
             UserRepository userRepository,
             KeycloakUserOnboardingTransactionService keycloakUserOnboardingTransactionService,
-            EmailNotificationService emailNotificationService,
-            @Qualifier("notificationTaskExecutor") TaskExecutor notificationTaskExecutor,
-            @Value("${app.activation-link-base:http://localhost:4200/activate}") String activationLinkBase) {
+            AccountActivationService accountActivationService) {
         this.keycloakAuthService = keycloakAuthService;
         this.userRepository = userRepository;
         this.keycloakUserOnboardingTransactionService = keycloakUserOnboardingTransactionService;
-        this.emailNotificationService = emailNotificationService;
-        this.notificationTaskExecutor = notificationTaskExecutor;
-        this.activationLinkBase = activationLinkBase;
+        this.accountActivationService = accountActivationService;
     }
 
     public User createUser(CreateUserRequest request) {
@@ -176,8 +163,7 @@ public class KeycloakUserService {
             User user = onboardingResult.user();
             ActivationTokenService.IssuedActivationToken issuedToken = onboardingResult.issuedToken();
 
-            String activationLink = buildActivationLink(issuedToken.rawToken());
-            dispatchActivationEmailAfterCommit(user.getEmail(), user.getUsername(), activationLink);
+            accountActivationService.dispatchActivationEmail(user, issuedToken.rawToken(), "USER_CREATE");
             logger.info(
                     "event=USER_CREATE_SUCCESS correlationId={} username={} email={} externalId={}",
                     correlationId,
@@ -240,27 +226,6 @@ public class KeycloakUserService {
 
         String value = role.trim().toUpperCase(Locale.ROOT);
         return value.startsWith("ROLE_") ? value.substring(5) : value;
-    }
-
-    private String buildActivationLink(String rawToken) {
-        String delimiter = activationLinkBase.contains("?") ? "&" : "?";
-        return activationLinkBase + delimiter + "token=" + URLEncoder.encode(rawToken, StandardCharsets.UTF_8);
-    }
-
-    private void dispatchActivationEmailAfterCommit(String email, String username, String activationLink) {
-        Runnable dispatchTask = () -> notificationTaskExecutor.execute(
-                () -> emailNotificationService.sendAccountActivationEmail(email, username, activationLink));
-
-        if (TransactionSynchronizationManager.isSynchronizationActive()) {
-            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
-                @Override
-                public void afterCommit() {
-                    dispatchTask.run();
-                }
-            });
-            return;
-        }
-        dispatchTask.run();
     }
 
     private void deleteUserFromKeycloak(String keycloakUserId) {

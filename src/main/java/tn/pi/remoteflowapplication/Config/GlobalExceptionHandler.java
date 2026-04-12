@@ -22,10 +22,16 @@ import tn.pi.remoteflowapplication.domain.exception.KeycloakConflictException;
 import tn.pi.remoteflowapplication.domain.exception.UserAlreadyExistsException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.slf4j.MDC;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
+
+import static net.logstash.logback.argument.StructuredArguments.kv;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Locale;
 
 @RestControllerAdvice
 public class GlobalExceptionHandler {
@@ -152,19 +158,36 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(AuthenticationFailedException.class)
     public ResponseEntity<ApiError> handleAuthenticationFailedException(AuthenticationFailedException ex,
             HttpServletRequest request) {
-        logger.warn(
-                "event=AUTH_LOGIN_FAILURE path={} errorCode={} keycloakError={} keycloakStatus={} message={}",
-                request == null ? null : request.getRequestURI(),
-                ex.getErrorCode(),
-                ex.getKeycloakError(),
-                ex.getKeycloakStatus(),
-                ex.getMessage());
+        String ip = request == null ? "unknown" : request.getRemoteAddr();
+        String path = request == null ? "unknown" : request.getRequestURI();
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        String user = (auth != null) ? auth.getName() : "anonymous";
+
+        logger.warn("AUTH_ERROR",
+                kv("event", ex.getAuthErrorCode().name()),
+                kv("event_normalized", ex.getAuthErrorCode().getNormalizedName()),
+                kv("category", "AUTH"),
+                kv("outcome", "FAILURE"),
+                kv("ip", ip),
+                kv("path", path),
+                kv("user", user),
+                kv("errorCode", ex.getErrorCode()),
+                kv("traceId", MDC.get("traceId")));
 
         String message = ex.getMessage() == null || ex.getMessage().isBlank()
                 ? "Invalid credentials or Keycloak rejected password grant"
                 : ex.getMessage();
 
-        return buildError(HttpStatus.UNAUTHORIZED, ex.getErrorCode(), message, request);
+        String apiErrorCode = resolveApiErrorCode(ex);
+        ApiError error = new ApiError(
+                LocalDateTime.now(),
+                HttpStatus.UNAUTHORIZED.value(),
+                apiErrorCode,
+                message,
+                request == null ? null : request.getRequestURI(),
+                ex.getRetryAfterSeconds());
+
+        return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(error);
     }
 
     @ExceptionHandler(DataIntegrityViolationException.class)
@@ -235,5 +258,24 @@ public class GlobalExceptionHandler {
             String message,
             String path,
             List<ValidationFieldError> fields) {
+    }
+
+    private String resolveApiErrorCode(AuthenticationFailedException exception) {
+        String code = exception.getErrorCode();
+        if (code == null || code.isBlank()) {
+            return exception.getAuthErrorCode().name();
+        }
+
+        String normalized = code.trim().toUpperCase(Locale.ROOT);
+        if ("AUTHENTICATION_FAILED".equals(normalized)
+                || "AUTH_INVALID".equals(normalized)
+                || "AUTH_TEMP_LOCK".equals(normalized)
+                || "AUTH_ACCOUNT_DISABLED".equals(normalized)
+                || "PASSWORD_UPDATE_REQUIRED".equals(normalized)) {
+            return exception.getAuthErrorCode().name();
+        }
+
+        // Preserve legacy/non-auth codes (e.g. ACTIVATION_TOKEN_INVALID).
+        return code;
     }
 }

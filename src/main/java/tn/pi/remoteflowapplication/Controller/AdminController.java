@@ -158,8 +158,12 @@ public class AdminController {
 
         byte[] pdfBytes = documentStoragePort.download(archiveNodeId);
         return ResponseEntity.ok()
-                .contentType(MediaType.APPLICATION_PDF)
-                .header(HttpHeaders.CONTENT_DISPOSITION, "inline; filename=archive_" + requestId + ".pdf")
+                .contentType(MediaType.APPLICATION_OCTET_STREAM)
+                .header("X-Content-Type-Options", "nosniff")
+                .header("Content-Security-Policy", "default-src 'none';")
+                .header(HttpHeaders.CONTENT_DISPOSITION,
+                        org.springframework.http.ContentDisposition.attachment()
+                                .filename("archive_" + requestId + ".pdf").build().toString())
                 .body(pdfBytes);
     }
 
@@ -190,8 +194,7 @@ public class AdminController {
                 archiveId,
                 score == null ? null : score.getId(),
                 score == null || score.getStatus() == null ? null : score.getStatus().name(),
-                score == null ? null : score.getTotalScore()
-        );
+                score == null ? null : score.getTotalScore());
     }
 
     private String normalizeNodeId(String nodeId) {
