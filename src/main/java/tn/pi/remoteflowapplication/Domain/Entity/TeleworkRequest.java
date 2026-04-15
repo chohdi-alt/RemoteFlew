@@ -111,6 +111,9 @@ public class TeleworkRequest extends DemandeTeletravail {
     }
 
     private TeleworkRequest(String employeeId, LocalDate startDate, LocalDate endDate) {
+        if (startDate != null && endDate != null && startDate.isAfter(endDate)) {
+            throw new IllegalArgumentException("Start date cannot be after end date");
+        }
         this.employeeId = employeeId;
         this.startDate = startDate;
         this.endDate = endDate;

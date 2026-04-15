@@ -167,6 +167,9 @@ public class TeleworkQueryController {
         try {
             ResponseEntity<org.springframework.core.io.Resource> response = queryService.viewJustificatif(id,
                     authentication);
+            if (response == null || response.getBody() == null) {
+                return ResponseEntity.notFound().build();
+            }
 
             logger.warn("FILE_EVENT",
                     kv("event", "FILE_JUSTIFICATION_VIEW"),
