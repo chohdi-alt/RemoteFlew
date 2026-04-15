@@ -15,6 +15,7 @@ import tn.pi.remoteflowapplication.domain.exception.BusinessException;
 import tn.pi.remoteflowapplication.domain.exception.ResourceNotFoundException;
 import tn.pi.remoteflowapplication.domain.exception.ForbiddenOperationException;
 import tn.pi.remoteflowapplication.domain.exception.WorkflowExecutionException;
+import tn.pi.remoteflowapplication.infrastructure.security.ClientIpResolver;
 import tn.pi.remoteflowapplication.domain.exception.BadRequestException;
 import tn.pi.remoteflowapplication.domain.exception.AuthenticationFailedException;
 import tn.pi.remoteflowapplication.domain.exception.ExternalServiceException;
@@ -37,6 +38,11 @@ import java.util.Locale;
 public class GlobalExceptionHandler {
 
     private static final Logger logger = LoggerFactory.getLogger(GlobalExceptionHandler.class);
+    private final ClientIpResolver clientIpResolver;
+
+    public GlobalExceptionHandler(ClientIpResolver clientIpResolver) {
+        this.clientIpResolver = clientIpResolver;
+    }
 
     @ExceptionHandler(BusinessException.class)
     public ResponseEntity<ApiError> handleBusinessException(BusinessException ex, HttpServletRequest request) {
@@ -158,7 +164,7 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(AuthenticationFailedException.class)
     public ResponseEntity<ApiError> handleAuthenticationFailedException(AuthenticationFailedException ex,
             HttpServletRequest request) {
-        String ip = request == null ? "unknown" : request.getRemoteAddr();
+        String ip = clientIpResolver.resolve(request);
         String path = request == null ? "unknown" : request.getRequestURI();
         Authentication auth = SecurityContextHolder.getContext().getAuthentication();
         String user = (auth != null) ? auth.getName() : "anonymous";

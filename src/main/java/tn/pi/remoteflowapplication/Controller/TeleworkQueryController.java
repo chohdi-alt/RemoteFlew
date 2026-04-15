@@ -17,6 +17,15 @@ import tn.pi.remoteflowapplication.application.query.TeleworkStatusQueryService;
 import tn.pi.remoteflowapplication.application.service.AgreementService;
 import tn.pi.remoteflowapplication.application.service.TeleworkQuotaService;
 import tn.pi.remoteflowapplication.application.service.ValidationInboxService;
+import tn.pi.remoteflowapplication.infrastructure.security.ClientIpResolver;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.slf4j.MDC;
+import org.springframework.web.context.request.RequestContextHolder;
+import org.springframework.web.context.request.ServletRequestAttributes;
+import jakarta.servlet.http.HttpServletRequest;
+
+import static net.logstash.logback.argument.StructuredArguments.kv;
 
 import java.util.List;
 
@@ -28,16 +37,20 @@ public class TeleworkQueryController {
     private final ValidationInboxService validationInboxService;
     private final AgreementService agreementService;
     private final TeleworkQuotaService teleworkQuotaService;
+    private final ClientIpResolver clientIpResolver;
+    private static final Logger logger = LoggerFactory.getLogger(TeleworkQueryController.class);
 
     public TeleworkQueryController(
             TeleworkStatusQueryService queryService,
             ValidationInboxService validationInboxService,
             AgreementService agreementService,
-            TeleworkQuotaService teleworkQuotaService) {
+            TeleworkQuotaService teleworkQuotaService,
+            ClientIpResolver clientIpResolver) {
         this.queryService = queryService;
         this.validationInboxService = validationInboxService;
         this.agreementService = agreementService;
         this.teleworkQuotaService = teleworkQuotaService;
+        this.clientIpResolver = clientIpResolver;
     }
 
     @GetMapping("/telework/quota")
@@ -85,16 +98,58 @@ public class TeleworkQueryController {
     public ResponseEntity<ByteArrayResource> downloadAgreementPdf(
             @PathVariable("id") Long requestId,
             Authentication authentication) {
-        AgreementFileDTO file = agreementService.downloadAgreementPdf(requestId, authentication);
-        ByteArrayResource resource = new ByteArrayResource(file.content());
+        String ip = clientIpResolver.resolve(getRequest());
+        String user = (authentication != null) ? authentication.getName() : "anonymous";
+        String traceId = getTraceId();
 
-        return ResponseEntity.ok()
-                .contentType(MediaType.APPLICATION_OCTET_STREAM)
-                .header("X-Content-Type-Options", "nosniff")
-                .header("Content-Security-Policy", "default-src 'none';")
-                .header(HttpHeaders.CONTENT_DISPOSITION, org.springframework.http.ContentDisposition.attachment().filename(file.fileName()).build().toString())
-                .contentLength(file.content().length)
-                .body(resource);
+        try {
+            AgreementFileDTO file = agreementService.downloadAgreementPdf(requestId, authentication);
+            ByteArrayResource resource = new ByteArrayResource(file.content());
+
+            logger.warn("FILE_EVENT",
+                    kv("event", "FILE_AGREEMENT_DOWNLOAD"),
+                    kv("event_normalized", "file.agreement.download"),
+                    kv("category", "FILE"),
+                    kv("outcome", "SUCCESS"),
+                    kv("severity", "HIGH"),
+                    kv("user", user),
+                    kv("requestId", requestId),
+                    kv("ip", ip),
+                    kv("ip_private", isPrivateIp(ip)),
+                    kv("traceId", traceId),
+                    kv("contentLength", file.content().length),
+                    kv("connection_type", "HTTP"),
+                    kv("layer", "APPLICATION"),
+                    kv("source", "remoteflow-backend"));
+
+            return ResponseEntity.ok()
+                    .contentType(MediaType.APPLICATION_OCTET_STREAM)
+                    .header("X-Content-Type-Options", "nosniff")
+                    .header("Content-Security-Policy", "default-src 'none';")
+                    .header(HttpHeaders.CONTENT_DISPOSITION,
+                            org.springframework.http.ContentDisposition.attachment().filename(file.fileName()).build()
+                                    .toString())
+                    .contentLength(file.content().length)
+                    .body(resource);
+        } catch (Exception ex) {
+            logger.error("FILE_EVENT",
+                    kv("event", "FILE_AGREEMENT_DOWNLOAD_FAILED"),
+                    kv("event_normalized", "file.agreement.download.failed"),
+                    kv("category", "FILE"),
+                    kv("outcome", "FAILURE"),
+                    kv("severity", "HIGH"),
+                    kv("user", user),
+                    kv("requestId", requestId),
+                    kv("ip", ip),
+                    kv("ip_private", isPrivateIp(ip)),
+                    kv("traceId", traceId),
+                    kv("error", ex.getClass().getSimpleName()),
+                    kv("error_message", ex.getMessage()),
+                    kv("connection_type", "HTTP"),
+                    kv("layer", "APPLICATION"),
+                    kv("source", "remoteflow-backend"));
+            throw ex;
+        }
     }
 
     @GetMapping("/telework/{id}/justificatif/view")
@@ -102,6 +157,65 @@ public class TeleworkQueryController {
     public ResponseEntity<org.springframework.core.io.Resource> viewJustificatif(
             @PathVariable Long id,
             Authentication authentication) {
-        return queryService.viewJustificatif(id, authentication);
+        String ip = clientIpResolver.resolve(getRequest());
+        String user = (authentication != null) ? authentication.getName() : "anonymous";
+        String traceId = getTraceId();
+
+        try {
+            ResponseEntity<org.springframework.core.io.Resource> response = queryService.viewJustificatif(id,
+                    authentication);
+
+            logger.warn("FILE_EVENT",
+                    kv("event", "FILE_JUSTIFICATION_VIEW"),
+                    kv("event_normalized", "file.justification.view"),
+                    kv("category", "FILE"),
+                    kv("outcome", "SUCCESS"),
+                    kv("severity", "HIGH"),
+                    kv("user", user),
+                    kv("requestId", id),
+                    kv("ip", ip),
+                    kv("ip_private", isPrivateIp(ip)),
+                    kv("traceId", traceId),
+                    kv("connection_type", "HTTP"),
+                    kv("layer", "APPLICATION"),
+                    kv("source", "remoteflow-backend"));
+            return response;
+        } catch (Exception ex) {
+            logger.error("FILE_EVENT",
+                    kv("event", "FILE_JUSTIFICATION_VIEW_FAILED"),
+                    kv("event_normalized", "file.justification.view.failed"),
+                    kv("category", "FILE"),
+                    kv("outcome", "FAILURE"),
+                    kv("severity", "HIGH"),
+                    kv("user", user),
+                    kv("requestId", id),
+                    kv("ip", ip),
+                    kv("ip_private", isPrivateIp(ip)),
+                    kv("traceId", traceId),
+                    kv("error", ex.getClass().getSimpleName()),
+                    kv("error_message", ex.getMessage()),
+                    kv("connection_type", "HTTP"),
+                    kv("layer", "APPLICATION"),
+                    kv("source", "remoteflow-backend"));
+            throw ex;
+        }
+    }
+
+    private HttpServletRequest getRequest() {
+        ServletRequestAttributes attrs = (ServletRequestAttributes) RequestContextHolder.getRequestAttributes();
+        return attrs != null ? attrs.getRequest() : null;
+    }
+
+    private String getTraceId() {
+        String traceId = MDC.get("traceId");
+        return (traceId != null) ? traceId : "N/A";
+    }
+
+    private boolean isPrivateIp(String ip) {
+        if (ip == null || "unknown".equalsIgnoreCase(ip))
+            return false;
+        return ip.startsWith("10.") ||
+                ip.startsWith("192.168.") ||
+                ip.matches("^172\\.(1[6-9]|2[0-9]|3[0-1])\\..*");
     }
 }

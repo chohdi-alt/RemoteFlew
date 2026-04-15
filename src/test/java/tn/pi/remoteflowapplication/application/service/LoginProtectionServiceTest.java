@@ -51,7 +51,7 @@ class LoginProtectionServiceTest {
         properties.setHardLockThresholdLockEvents(1);
         properties.setFailureWindowMinutes(30);
         properties.setTemporaryLockDedupSeconds(300);
-        service = new LoginProtectionService(stateRepository, keycloakAuthService, userRepository, properties);
+        service = new LoginProtectionService(stateRepository, keycloakAuthService, userRepository, properties, null);
     }
 
     @Test

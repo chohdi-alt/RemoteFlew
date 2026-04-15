@@ -1,0 +1,4 @@
+#NOTE: This is a Maven Resolver internal implementation file, its format can be changed without prior notice.
+#Wed Apr 15 12:07:51 WAT 2026
+@default-central-https\://repo.maven.apache.org/maven2/.lastUpdated=1776251271647
+https\://repo.maven.apache.org/maven2/.error=Could not transfer artifact io.projectreactor.netty\:reactor-netty\:pom\:1.1.18 from/to central (https\://repo.maven.apache.org/maven2)\: transfer failed for https\://repo.maven.apache.org/maven2/io/projectreactor/netty/reactor-netty/1.1.18/reactor-netty-1.1.18.pom

@@ -11,8 +11,14 @@ import org.keycloak.representations.idm.RoleRepresentation;
 import org.keycloak.representations.idm.UserRepresentation;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.slf4j.MDC;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
+import org.springframework.web.context.request.RequestContextHolder;
+import org.springframework.web.context.request.ServletRequestAttributes;
+
+import jakarta.servlet.http.HttpServletRequest;
+import static net.logstash.logback.argument.StructuredArguments.kv;
 
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
@@ -36,10 +42,12 @@ public class KeycloakAuthService {
 
     private final Keycloak keycloak;
     private final String realm;
+    private final ClientIpResolver clientIpResolver;
 
-    public KeycloakAuthService(Keycloak keycloak, @Value("${keycloak.realm}") String realm) {
+    public KeycloakAuthService(Keycloak keycloak, @Value("${keycloak.realm}") String realm, ClientIpResolver clientIpResolver) {
         this.keycloak = keycloak;
         this.realm = realm;
+        this.clientIpResolver = clientIpResolver;
     }
 
     public UserRepresentation getUserById(String userId) {
@@ -175,7 +183,21 @@ public class KeycloakAuthService {
         try {
             realmResource().users().delete(userId);
         } catch (Exception ex) {
-            logger.warn("event=KEYCLOAK_USER_DELETE_FAILED userId={} reason={}", userId, ex.getMessage(), ex);
+            String ip = getClientIp();
+            logger.warn("AUTH_EVENT",
+                    kv("event", "KEYCLOAK_USER_DELETE_FAILED"),
+                    kv("event_normalized", "keycloak.user.delete.failed"),
+                    kv("category", "AUTH"),
+                    kv("outcome", "FAILURE"),
+                    kv("userId", userId),
+                    kv("reason", ex.getMessage()),
+                    kv("traceId", getTraceId()),
+                    kv("ip", ip),
+                    kv("ip_private", isPrivateIp(ip)),
+                    kv("connection_type", "HTTP"),
+                    kv("layer", "APPLICATION"),
+                    kv("severity", "MEDIUM")
+            );
         }
     }
 
@@ -198,24 +220,46 @@ public class KeycloakAuthService {
         user.setRequiredActions(List.of(REQUIRED_ACTION_UPDATE_PASSWORD));
 
         String endpoint = buildUsersEndpoint();
-        logger.info(
-                "event=KEYCLOAK_CREATE_REQUEST username={} email={} firstNameSet={} lastNameSet={} url={}",
-                username,
-                email,
-                firstName != null && !firstName.isBlank(),
-                lastName != null && !lastName.isBlank(),
-                endpoint);
+        String ip = getClientIp();
+        String traceId = getTraceId();
+        logger.info("AUTH_EVENT",
+                kv("event", "KEYCLOAK_CREATE_REQUEST"),
+                kv("event_normalized", "keycloak.user.create.attempt"),
+                kv("category", "AUTH"),
+                kv("outcome", "ATTEMPT"),
+                kv("user", username),
+                kv("email", email),
+                kv("firstNameSet", firstName != null && !firstName.isBlank()),
+                kv("lastNameSet", lastName != null && !lastName.isBlank()),
+                kv("url", endpoint),
+                kv("traceId", traceId),
+                kv("ip", ip),
+                kv("ip_private", isPrivateIp(ip)),
+                kv("connection_type", "HTTP"),
+                kv("layer", "APPLICATION"),
+                kv("severity", "LOW")
+        );
 
         try (Response response = realmResource().users().create(user)) {
             int status = response.getStatus();
             String responseBody = safeReadResponseBody(response);
-            logger.info(
-                    "event=KEYCLOAK_CREATE_RESPONSE status={} url={} username={} email={} body={}",
-                    status,
-                    endpoint,
-                    username,
-                    email,
-                    abbreviateBody(responseBody));
+            logger.info("AUTH_EVENT",
+                    kv("event", "KEYCLOAK_CREATE_RESPONSE"),
+                    kv("event_normalized", "keycloak.user.create.response"),
+                    kv("category", "AUTH"),
+                    kv("outcome", status == 201 ? "SUCCESS" : "FAILURE"),
+                    kv("user", username),
+                    kv("email", email),
+                    kv("status", status),
+                    kv("url", endpoint),
+                    kv("body", abbreviateBody(responseBody)),
+                    kv("traceId", traceId),
+                    kv("ip", ip),
+                    kv("ip_private", isPrivateIp(ip)),
+                    kv("connection_type", "HTTP"),
+                    kv("layer", "APPLICATION"),
+                    kv("severity", status == 201 ? "LOW" : "MEDIUM")
+            );
 
             if (status == 201) {
                 String userIdFromLocation = extractUserIdFromLocation(response);
@@ -509,15 +553,25 @@ public class KeycloakAuthService {
                     : "unknown";
             String message = buildStatusMessage(operation, status, reason);
 
-            logger.error(
-                    "event=KEYCLOAK_API_ERROR operation={} status={} reason={} url={} body={} cause={}",
-                    operation,
-                    status,
-                    reason,
-                    endpoint,
-                    abbreviateBody(body),
-                    webEx.getMessage(),
-                    webEx);
+            String ip = getClientIp();
+            logger.error("AUTH_EVENT",
+                    kv("event", "KEYCLOAK_API_ERROR"),
+                    kv("event_normalized", "keycloak.api.error"),
+                    kv("category", "AUTH"),
+                    kv("outcome", "FAILURE"),
+                    kv("operation", operation),
+                    kv("status", status),
+                    kv("reason", reason),
+                    kv("url", endpoint),
+                    kv("body", abbreviateBody(body)),
+                    kv("cause", webEx.getMessage()),
+                    kv("traceId", getTraceId()),
+                    kv("ip", ip),
+                    kv("ip_private", isPrivateIp(ip)),
+                    kv("connection_type", "HTTP"),
+                    kv("layer", "APPLICATION"),
+                    kv("severity", "MEDIUM")
+            );
 
             return new ExternalServiceException(message, webEx, status, body, endpoint, operation);
         }
@@ -743,5 +797,38 @@ public class KeycloakAuthService {
             return value.substring(5);
         }
         return value;
+    }
+
+    private String getClientIp() {
+        ServletRequestAttributes attrs =
+                (ServletRequestAttributes) RequestContextHolder.getRequestAttributes();
+
+        if (attrs == null) return "unknown";
+
+        HttpServletRequest request = attrs.getRequest();
+        return clientIpResolver.resolve(request);
+    }
+
+    private String getTraceId() {
+        String traceId = MDC.get("traceId");
+        return (traceId != null) ? traceId : "N/A";
+    }
+
+    private boolean isPrivateIp(String ip) {
+        if (ip == null || "unknown".equals(ip)) return false;
+        return ip.startsWith("10.")
+                || ip.startsWith("192.168.")
+                || (ip.startsWith("172.") && is172Private(ip));
+    }
+
+    private boolean is172Private(String ip) {
+        try {
+            String[] parts = ip.split("\\.");
+            if (parts.length < 2) return false;
+            int secondOctet = Integer.parseInt(parts[1]);
+            return secondOctet >= 16 && secondOctet <= 31;
+        } catch (Exception e) {
+            return false;
+        }
     }
 }

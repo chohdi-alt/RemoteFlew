@@ -44,7 +44,7 @@ class KeycloakAuthServiceTest {
 
     @BeforeEach
     void setUp() {
-        service = new KeycloakAuthService(keycloak, "pfe-realm");
+        service = new KeycloakAuthService(keycloak, "pfe-realm", null);
         when(keycloak.realm("pfe-realm")).thenReturn(realmResource);
         when(realmResource.users()).thenReturn(usersResource);
     }
@@ -130,14 +130,16 @@ class KeycloakAuthServiceTest {
                 () -> service.findUserIdByEmail("netfail@mailhog.local"));
 
         assertNull(exception.getUpstreamStatus());
-        assertEquals("/admin/realms/pfe-realm/users?email=netfail@mailhog.local&exact=true", exception.getUpstreamUrl());
+        assertEquals("/admin/realms/pfe-realm/users?email=netfail@mailhog.local&exact=true",
+                exception.getUpstreamUrl());
     }
 
     @Test
     void shouldReturnCreatedUserIdOn201() {
         when(usersResource.create(any(UserRepresentation.class))).thenReturn(response);
         when(response.getStatus()).thenReturn(201);
-        when(response.getLocation()).thenReturn(URI.create("http://localhost:8081/admin/realms/pfe-realm/users/abc-123"));
+        when(response.getLocation())
+                .thenReturn(URI.create("http://localhost:8081/admin/realms/pfe-realm/users/abc-123"));
 
         String createdId = service.createUser("new-user", "new-user@mailhog.local", "New", "User");
 
@@ -148,7 +150,8 @@ class KeycloakAuthServiceTest {
     void shouldCreateEnabledUserWithUpdatePasswordRequiredAction() {
         when(usersResource.create(any(UserRepresentation.class))).thenReturn(response);
         when(response.getStatus()).thenReturn(201);
-        when(response.getLocation()).thenReturn(URI.create("http://localhost:8081/admin/realms/pfe-realm/users/created-456"));
+        when(response.getLocation())
+                .thenReturn(URI.create("http://localhost:8081/admin/realms/pfe-realm/users/created-456"));
 
         service.createUser("enabled.user", "enabled.user@mailhog.local", "Enabled", "User");
 

@@ -1,0 +1,4 @@
+#NOTE: This is a Maven Resolver internal implementation file, its format can be changed without prior notice.
+#Wed Apr 15 12:07:51 WAT 2026
+@default-central-https\://repo.maven.apache.org/maven2/.lastUpdated=1776251271938
+https\://repo.maven.apache.org/maven2/.error=Could not transfer artifact io.micrometer\:micrometer-registry-prometheus\:pom\:1.12.5 from/to central (https\://repo.maven.apache.org/maven2)\: transfer failed for https\://repo.maven.apache.org/maven2/io/micrometer/micrometer-registry-prometheus/1.12.5/micrometer-registry-prometheus-1.12.5.pom

@@ -8,7 +8,27 @@
         </encoder>
     </appender>
 
+    <appender name="FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
+        <file>logs/remoteflow.log</file>
+
+        <rollingPolicy class="ch.qos.logback.core.rolling.SizeAndTimeBasedRollingPolicy">
+            <!-- daily rotation -->
+            <fileNamePattern>logs/remoteflow.%d{yyyy-MM-dd}.%i.log</fileNamePattern>
+            <!-- max file size before rolling -->
+            <maxFileSize>10MB</maxFileSize>
+            <!-- keep logs for 14 days -->
+            <maxHistory>14</maxHistory>
+            <!-- total size cap -->
+            <totalSizeCap>1GB</totalSizeCap>
+        </rollingPolicy>
+
+        <encoder class="net.logstash.logback.encoder.LogstashEncoder">
+            <provider class="net.logstash.logback.composite.loggingevent.ArgumentsJsonProvider" />
+        </encoder>
+    </appender>
+
     <root level="INFO">
         <appender-ref ref="CONSOLE"/>
+        <appender-ref ref="FILE"/>
     </root>
 </configuration>

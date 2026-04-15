@@ -26,6 +26,7 @@
         <springdoc.version>2.5.0</springdoc.version>
         <lombok.version>1.18.32</lombok.version>
         <keycloak.version>24.0.3</keycloak.version>
+        <test.tags>unit</test.tags>
     </properties>
 
 
@@ -227,6 +228,27 @@
             <scope>test</scope>
         </dependency>
 
+        <dependency>
+            <groupId>org.testcontainers</groupId>
+            <artifactId>mariadb</artifactId>
+            <version>1.19.3</version>
+            <scope>test</scope>
+        </dependency>
+
+        <dependency>
+            <groupId>org.awaitility</groupId>
+            <artifactId>awaitility</artifactId>
+            <version>4.2.1</version>
+            <scope>test</scope>
+        </dependency>
+
+        <dependency>
+            <groupId>org.wiremock</groupId>
+            <artifactId>wiremock-standalone</artifactId>
+            <version>3.9.1</version>
+            <scope>test</scope>
+        </dependency>
+
         <!-- ===== Flyway ===== -->
         <dependency>
             <groupId>org.flywaydb</groupId>
@@ -282,14 +304,33 @@
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-surefire-plugin</artifactId>
                 <configuration>
-                    <!-- Include IT tests to prevent integration logic from being skipped. -->
+                    <groups>${test.tags}</groups>
+                    <failIfNoTests>false</failIfNoTests>
                     <includes>
-                        <include>**/*Test.java</include>
-                        <include>**/*Tests.java</include>
-                        <include>**/*TestCase.java</include>
-                        <include>**/*IT.java</include>
+                        <include>**/tests/**/*Test.java</include>
+                        <include>**/tests/**/*IT.java</include>
                     </includes>
                 </configuration>
+            </plugin>
+
+            <plugin>
+                <groupId>org.jacoco</groupId>
+                <artifactId>jacoco-maven-plugin</artifactId>
+                <version>0.8.11</version>
+                <executions>
+                    <execution>
+                        <goals>
+                            <goal>prepare-agent</goal>
+                        </goals>
+                    </execution>
+                    <execution>
+                        <id>report</id>
+                        <phase>test</phase>
+                        <goals>
+                            <goal>report</goal>
+                        </goals>
+                    </execution>
+                </executions>
             </plugin>
 
             <plugin>
@@ -310,5 +351,38 @@
 
         </plugins>
     </build>
+
+    <profiles>
+        <profile>
+            <id>test-unit</id>
+            <properties>
+                <test.tags>unit</test.tags>
+            </properties>
+        </profile>
+        <profile>
+            <id>test-security</id>
+            <properties>
+                <test.tags>security</test.tags>
+            </properties>
+        </profile>
+        <profile>
+            <id>test-integration</id>
+            <properties>
+                <test.tags>integration</test.tags>
+            </properties>
+        </profile>
+        <profile>
+            <id>test-workflow</id>
+            <properties>
+                <test.tags>workflow</test.tags>
+            </properties>
+        </profile>
+        <profile>
+            <id>test-all</id>
+            <properties>
+                <test.tags>unit,security,integration,workflow</test.tags>
+            </properties>
+        </profile>
+    </profiles>
 
 </project>

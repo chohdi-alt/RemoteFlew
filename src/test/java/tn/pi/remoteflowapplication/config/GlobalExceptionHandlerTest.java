@@ -24,14 +24,14 @@ class GlobalExceptionHandlerTest {
     @BeforeEach
     void setUp() {
         mockMvc = MockMvcBuilders.standaloneSetup(new ErrorThrowingController())
-                .setControllerAdvice(new GlobalExceptionHandler())
+                .setControllerAdvice(new GlobalExceptionHandler(null))
                 .build();
     }
 
     @Test
     void shouldReturn409ForKeycloakConflictException() throws Exception {
-                mockMvc.perform(get("/test/errors/keycloak-conflict")
-                        .accept(MediaType.APPLICATION_JSON))
+        mockMvc.perform(get("/test/errors/keycloak-conflict")
+                .accept(MediaType.APPLICATION_JSON))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.error").value("KEYCLOAK_CONFLICT"))
                 .andExpect(jsonPath("$.message").value("Email already exists in Keycloak."))
@@ -40,8 +40,8 @@ class GlobalExceptionHandlerTest {
 
     @Test
     void shouldReturn409ForUserAlreadyExistsException() throws Exception {
-                mockMvc.perform(get("/test/errors/user-exists")
-                        .accept(MediaType.APPLICATION_JSON))
+        mockMvc.perform(get("/test/errors/user-exists")
+                .accept(MediaType.APPLICATION_JSON))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.error").value("USER_ALREADY_EXISTS"))
                 .andExpect(jsonPath("$.message").value("User already exists."));
@@ -49,8 +49,8 @@ class GlobalExceptionHandlerTest {
 
     @Test
     void shouldReturn502ForExternalServiceException() throws Exception {
-                mockMvc.perform(get("/test/errors/external-service")
-                        .accept(MediaType.APPLICATION_JSON))
+        mockMvc.perform(get("/test/errors/external-service")
+                .accept(MediaType.APPLICATION_JSON))
                 .andExpect(status().isBadGateway())
                 .andExpect(jsonPath("$.error").value("EXTERNAL_SERVICE_ERROR"))
                 .andExpect(jsonPath("$.message").value("Keycloak unavailable."));
@@ -59,7 +59,7 @@ class GlobalExceptionHandlerTest {
     @Test
     void shouldReturnEnumAuthCodeForAuthenticationFailedException() throws Exception {
         mockMvc.perform(get("/test/errors/auth-temp-lock")
-                        .accept(MediaType.APPLICATION_JSON))
+                .accept(MediaType.APPLICATION_JSON))
                 .andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.error").value("AUTH_TEMP_LOCK"))
                 .andExpect(jsonPath("$.message").value("Too many failed attempts."));
@@ -68,7 +68,7 @@ class GlobalExceptionHandlerTest {
     @Test
     void shouldPreserveLegacyNonAuthErrorCodeForAuthenticationFailedException() throws Exception {
         mockMvc.perform(get("/test/errors/auth-legacy-code")
-                        .accept(MediaType.APPLICATION_JSON))
+                .accept(MediaType.APPLICATION_JSON))
                 .andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.error").value("ACTIVATION_TOKEN_INVALID"))
                 .andExpect(jsonPath("$.message").value("Activation token is invalid or expired."));

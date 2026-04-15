@@ -2,13 +2,20 @@ package tn.pi.remoteflowapplication.application.service;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.slf4j.MDC;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.context.request.RequestContextHolder;
+import org.springframework.web.context.request.ServletRequestAttributes;
+
+import jakarta.servlet.http.HttpServletRequest;
+import static net.logstash.logback.argument.StructuredArguments.kv;
 import tn.pi.remoteflowapplication.application.port.out.UserRepository;
 import tn.pi.remoteflowapplication.config.LoginProtectionProperties;
 import tn.pi.remoteflowapplication.domain.entity.LoginProtectionState;
 import tn.pi.remoteflowapplication.domain.exception.AuthenticationFailedException;
 import tn.pi.remoteflowapplication.infrastructure.persistence.SpringLoginProtectionStateJpaRepository;
+import tn.pi.remoteflowapplication.infrastructure.security.ClientIpResolver;
 import tn.pi.remoteflowapplication.infrastructure.security.KeycloakAuthService;
 
 import java.time.Instant;
@@ -24,16 +31,19 @@ public class LoginProtectionService {
     private final KeycloakAuthService keycloakAuthService;
     private final UserRepository userRepository;
     private final LoginProtectionProperties properties;
+    private final ClientIpResolver clientIpResolver;
 
     public LoginProtectionService(
             SpringLoginProtectionStateJpaRepository stateRepository,
             KeycloakAuthService keycloakAuthService,
             UserRepository userRepository,
-            LoginProtectionProperties properties) {
+            LoginProtectionProperties properties,
+            ClientIpResolver clientIpResolver) {
         this.stateRepository = stateRepository;
         this.keycloakAuthService = keycloakAuthService;
         this.userRepository = userRepository;
         this.properties = properties;
+        this.clientIpResolver = clientIpResolver;
     }
 
     @Transactional
@@ -48,11 +58,22 @@ public class LoginProtectionService {
             return;
         }
         if (failureType == FailureType.ACCOUNT_DISABLED) {
-            logger.warn(
-                    "event=AUTH_DISABLED_ACCOUNT_ATTEMPT username={} keycloakError={} keycloakStatus={}",
-                    normalizedUsername,
-                    exception.getKeycloakError(),
-                    exception.getKeycloakStatus());
+            String ip = getClientIp();
+            String eventName = "AUTH_ACCOUNT_DISABLED";
+            logger.warn("AUTH_EVENT",
+                    kv("event", eventName),
+                    kv("event_normalized", "auth.account.disabled"),
+                    kv("category", "AUTH"),
+                    kv("outcome", "FAILURE"),
+                    kv("user", normalizedUsername),
+                    kv("keycloakError", exception.getKeycloakError()),
+                    kv("keycloakStatus", exception.getKeycloakStatus()),
+                    kv("traceId", getTraceId()),
+                    kv("ip", ip),
+                    kv("ip_private", isPrivateIp(ip)),
+                    kv("connection_type", "HTTP"),
+                    kv("layer", "APPLICATION"),
+                    kv("severity", getSeverity(eventName)));
             return;
         }
 
@@ -60,29 +81,51 @@ public class LoginProtectionService {
                 .orElseGet(() -> new LoginProtectionState(normalizedUsername));
         Instant now = Instant.now();
 
+        String ip = getClientIp();
+        String traceId = getTraceId();
         switch (failureType) {
             case TEMPORARY_LOCK -> {
                 boolean newLockEvent = state.registerTemporaryLock(
                         now,
                         properties.failureWindow(),
                         properties.temporaryLockDedupWindow());
-                logger.warn(
-                        "event=AUTH_TEMP_LOCK username={} newLockEvent={} failureCount={} lockEventCount={} windowMinutes={}",
-                        normalizedUsername,
-                        newLockEvent,
-                        state.getFailureCount(),
-                        state.getTemporaryLockCount(),
-                        properties.getFailureWindowMinutes());
+                String eventName = "AUTH_TEMP_LOCK";
+                logger.warn("AUTH_EVENT",
+                        kv("event", eventName),
+                        kv("event_normalized", "auth.lock.temporary"),
+                        kv("category", "AUTH"),
+                        kv("outcome", "FAILURE"),
+                        kv("user", normalizedUsername),
+                        kv("newLockEvent", newLockEvent),
+                        kv("failureCount", state.getFailureCount()),
+                        kv("lockEventCount", state.getTemporaryLockCount()),
+                        kv("windowMinutes", properties.getFailureWindowMinutes()),
+                        kv("traceId", traceId),
+                        kv("ip", ip),
+                        kv("ip_private", isPrivateIp(ip)),
+                        kv("connection_type", "HTTP"),
+                        kv("layer", "APPLICATION"),
+                        kv("severity", getSeverity(eventName)));
             }
             default -> {
                 state.registerCredentialFailure(now, properties.failureWindow());
-                logger.warn(
-                        "event=AUTH_FAILURE_TRACKED username={} failureCount={} lockEventCount={} keycloakError={} keycloakStatus={}",
-                        normalizedUsername,
-                        state.getFailureCount(),
-                        state.getTemporaryLockCount(),
-                        exception.getKeycloakError(),
-                        exception.getKeycloakStatus());
+                String eventName = "AUTH_FAILURE_TRACKED";
+                logger.warn("AUTH_EVENT",
+                        kv("event", eventName),
+                        kv("event_normalized", "auth.failure.tracked"),
+                        kv("category", "AUTH"),
+                        kv("outcome", "FAILURE"),
+                        kv("user", normalizedUsername),
+                        kv("failureCount", state.getFailureCount()),
+                        kv("lockEventCount", state.getTemporaryLockCount()),
+                        kv("keycloakError", exception.getKeycloakError()),
+                        kv("keycloakStatus", exception.getKeycloakStatus()),
+                        kv("traceId", traceId),
+                        kv("ip", ip),
+                        kv("ip_private", isPrivateIp(ip)),
+                        kv("connection_type", "HTTP"),
+                        kv("layer", "APPLICATION"),
+                        kv("severity", getSeverity(eventName)));
             }
         }
 
@@ -113,17 +156,43 @@ public class LoginProtectionService {
             return;
         }
         stateRepository.deleteByUsername(normalizedUsername);
-        logger.info("event=AUTH_LOGIN_PROTECTION_RESET username={} reason=admin-reactivation", normalizedUsername);
+        String ip = getClientIp();
+        String eventName = "AUTH_LOGIN_PROTECTION_RESET";
+        logger.info("AUTH_EVENT",
+                kv("event", eventName),
+                kv("event_normalized", "auth.protection.reset"),
+                kv("category", "AUTH"),
+                kv("outcome", "SUCCESS"),
+                kv("user", normalizedUsername),
+                kv("reason", "admin-reactivation"),
+                kv("traceId", getTraceId()),
+                kv("ip", ip),
+                kv("ip_private", isPrivateIp(ip)),
+                kv("connection_type", "HTTP"),
+                kv("layer", "APPLICATION"),
+                kv("severity", getSeverity(eventName)));
     }
 
     private void escalateToHardLock(String normalizedUsername, LoginProtectionState state) {
         Optional<String> keycloakUserId = keycloakAuthService.findUserIdByUsername(normalizedUsername);
         if (keycloakUserId.isEmpty()) {
-            logger.warn(
-                    "event=AUTH_HARD_LOCK_SKIPPED username={} reason=user-not-found failureCount={} lockEventCount={}",
-                    normalizedUsername,
-                    state.getFailureCount(),
-                    state.getTemporaryLockCount());
+            String ip = getClientIp();
+            String eventName = "AUTH_HARD_LOCK_SKIPPED";
+            logger.warn("AUTH_EVENT",
+                    kv("event", eventName),
+                    kv("event_normalized", "auth.lock.hard.skipped"),
+                    kv("category", "AUTH"),
+                    kv("outcome", "FAILURE"),
+                    kv("user", normalizedUsername),
+                    kv("reason", "user-not-found"),
+                    kv("failureCount", state.getFailureCount()),
+                    kv("lockEventCount", state.getTemporaryLockCount()),
+                    kv("traceId", getTraceId()),
+                    kv("ip", ip),
+                    kv("ip_private", isPrivateIp(ip)),
+                    kv("connection_type", "HTTP"),
+                    kv("layer", "APPLICATION"),
+                    kv("severity", getSeverity(eventName)));
             return;
         }
 
@@ -134,14 +203,25 @@ public class LoginProtectionService {
             userRepository.save(user);
         });
         state.markHardLocked(Instant.now());
-        logger.error(
-                "event=AUTH_HARD_LOCK_APPLIED username={} keycloakUserId={} failureCount={} lockEventCount={} thresholdFailures={} thresholdLockEvents={}",
-                normalizedUsername,
-                userId,
-                state.getFailureCount(),
-                state.getTemporaryLockCount(),
-                properties.getHardLockThresholdFailures(),
-                properties.getHardLockThresholdLockEvents());
+        String ip = getClientIp();
+        String eventName = "AUTH_HARD_LOCK_APPLIED";
+        logger.error("AUTH_EVENT",
+                kv("event", eventName),
+                kv("event_normalized", "auth.lock.hard"),
+                kv("category", "AUTH"),
+                kv("outcome", "FAILURE"),
+                kv("user", normalizedUsername),
+                kv("keycloakUserId", userId),
+                kv("failureCount", state.getFailureCount()),
+                kv("lockEventCount", state.getTemporaryLockCount()),
+                kv("thresholdFailures", properties.getHardLockThresholdFailures()),
+                kv("thresholdLockEvents", properties.getHardLockThresholdLockEvents()),
+                kv("traceId", getTraceId()),
+                kv("ip", ip),
+                kv("ip_private", isPrivateIp(ip)),
+                kv("connection_type", "HTTP"),
+                kv("layer", "APPLICATION"),
+                kv("severity", getSeverity(eventName)));
     }
 
     private FailureType classify(AuthenticationFailedException exception) {
@@ -193,6 +273,54 @@ public class LoginProtectionService {
             }
         }
         return false;
+    }
+
+    private String getClientIp() {
+        ServletRequestAttributes attrs = (ServletRequestAttributes) RequestContextHolder.getRequestAttributes();
+
+        if (attrs == null)
+            return "unknown";
+
+        HttpServletRequest request = attrs.getRequest();
+        return clientIpResolver.resolve(request);
+    }
+
+    private String getTraceId() {
+        String traceId = MDC.get("traceId");
+        return (traceId != null) ? traceId : "N/A";
+    }
+
+    private boolean isPrivateIp(String ip) {
+        if (ip == null || "unknown".equals(ip))
+            return false;
+        return ip.startsWith("10.")
+                || ip.startsWith("192.168.")
+                || (ip.startsWith("172.") && is172Private(ip));
+    }
+
+    private boolean is172Private(String ip) {
+        try {
+            String[] parts = ip.split("\\.");
+            if (parts.length < 2)
+                return false;
+            int secondOctet = Integer.parseInt(parts[1]);
+            return secondOctet >= 16 && secondOctet <= 31;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    private String getSeverity(String event) {
+        if (event == null)
+            return "UNKNOWN";
+        return switch (event) {
+            case "AUTH_INVALID", "AUTH_FAILURE_TRACKED", "AUTH_LOGIN_FAILURE" -> "LOW";
+            case "AUTH_TEMP_LOCK" -> "MEDIUM";
+            case "AUTH_ACCOUNT_DISABLED", "AUTH_HARD_LOCK_APPLIED" -> "HIGH";
+            case "PASSWORD_UPDATE_REQUIRED" -> "MEDIUM";
+            case "AUTH_SUCCESS", "AUTH_LOGIN_PROTECTION_RESET" -> "LOW";
+            default -> "UNKNOWN";
+        };
     }
 
     private enum FailureType {

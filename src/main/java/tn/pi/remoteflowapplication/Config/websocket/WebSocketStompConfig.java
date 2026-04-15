@@ -13,14 +13,17 @@ import org.springframework.web.socket.config.annotation.WebSocketMessageBrokerCo
 public class WebSocketStompConfig implements WebSocketMessageBrokerConfigurer {
 
     private final WebSocketProperties properties;
+    private final WebSocketHandshakeInterceptor webSocketHandshakeInterceptor;
 
-    public WebSocketStompConfig(WebSocketProperties properties) {
+    public WebSocketStompConfig(WebSocketProperties properties, WebSocketHandshakeInterceptor webSocketHandshakeInterceptor) {
         this.properties = properties;
+        this.webSocketHandshakeInterceptor = webSocketHandshakeInterceptor;
     }
 
     @Override
     public void registerStompEndpoints(StompEndpointRegistry registry) {
         registry.addEndpoint("/ws")
+                .addInterceptors(webSocketHandshakeInterceptor)
                 .setAllowedOriginPatterns("*");
     }
 

@@ -15,6 +15,12 @@ import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationConverter;
 import org.springframework.stereotype.Component;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.slf4j.MDC;
+
+import static net.logstash.logback.argument.StructuredArguments.kv;
+
 import java.util.Collection;
 import java.util.List;
 import java.util.Locale;
@@ -24,6 +30,8 @@ import java.util.Set;
 @Component
 @ConditionalOnProperty(name = "remoteflow.websocket.enabled", havingValue = "true")
 public class StompJwtChannelInterceptor implements ChannelInterceptor {
+
+    private static final Logger logger = LoggerFactory.getLogger(StompJwtChannelInterceptor.class);
 
     private static final String USER_PRIVATE_QUEUE = "/user/queue/signals";
     private static final String LEGACY_MANAGER_TOPIC = "/topic/roles/MANAGER";
@@ -39,8 +47,7 @@ public class StompJwtChannelInterceptor implements ChannelInterceptor {
             "user.read",
             "openid",
             "profile",
-            "email"
-    );
+            "email");
 
     private static final Set<String> MANAGER_SUBSCRIBE_SCOPES = Set.of(
             "websocket:subscribe",
@@ -52,8 +59,7 @@ public class StompJwtChannelInterceptor implements ChannelInterceptor {
             "manager.read",
             "openid",
             "profile",
-            "email"
-    );
+            "email");
 
     private static final Set<String> HR_SUBSCRIBE_SCOPES = Set.of(
             "websocket:subscribe",
@@ -65,8 +71,7 @@ public class StompJwtChannelInterceptor implements ChannelInterceptor {
             "hr.read",
             "openid",
             "profile",
-            "email"
-    );
+            "email");
 
     private static final Set<String> REQUEST_SUBSCRIBE_SCOPES = Set.of(
             "websocket:subscribe",
@@ -78,8 +83,7 @@ public class StompJwtChannelInterceptor implements ChannelInterceptor {
             "requests.read",
             "openid",
             "profile",
-            "email"
-    );
+            "email");
 
     private static final Set<String> ADMIN_SUBSCRIBE_SCOPES = Set.of(
             "websocket:subscribe",
@@ -91,8 +95,7 @@ public class StompJwtChannelInterceptor implements ChannelInterceptor {
             "admin.read",
             "openid",
             "profile",
-            "email"
-    );
+            "email");
 
     private final JwtDecoder jwtDecoder;
     private final JwtAuthenticationConverter jwtAuthenticationConverter;
@@ -136,6 +139,24 @@ public class StompJwtChannelInterceptor implements ChannelInterceptor {
     private void validateConnect(StompHeaderAccessor accessor) {
         Authentication auth = toAuthentication(accessor.getUser());
         if (auth == null || !auth.isAuthenticated()) {
+            String sessionId = accessor.getSessionId() != null ? accessor.getSessionId() : "unknown";
+            String traceId = MDC.get("traceId") != null ? MDC.get("traceId") : "N/A";
+            String ip = resolveIp(accessor);
+
+            logger.warn("WS_SECURITY_EVENT",
+                    kv("event", "WS_CONNECT_FAILURE"),
+                    kv("event_normalized", "ws.connect.failure"),
+                    kv("category", "WEBSOCKET"),
+                    kv("outcome", "FAILURE"),
+                    kv("severity", "MEDIUM"),
+                    kv("user", "anonymous"),
+                    kv("sessionId", sessionId),
+                    kv("ip", ip),
+                    kv("ip_private", isPrivateIp(ip)),
+                    kv("traceId", traceId),
+                    kv("source", "remoteflow-backend"),
+                    kv("connection_type", "WEBSOCKET"),
+                    kv("layer", "REALTIME"));
             throw new AccessDeniedException("Authentication required for websocket connect");
         }
     }
@@ -224,7 +245,50 @@ public class StompJwtChannelInterceptor implements ChannelInterceptor {
             return;
         }
 
+        logDeniedSubscription(username, roles, destination, accessor);
         throw new AccessDeniedException("Unauthorized subscription");
+    }
+
+    private void logDeniedSubscription(String username,
+            Collection<? extends GrantedAuthority> roles,
+            String destination,
+            StompHeaderAccessor accessor) {
+        String sessionId = accessor.getSessionId() != null ? accessor.getSessionId() : "unknown";
+        String traceId = MDC.get("traceId") != null ? MDC.get("traceId") : "N/A";
+        String ip = resolveIp(accessor);
+
+        logger.warn("WS_SECURITY_EVENT",
+                kv("event", "WS_SUBSCRIBE_DENIED"),
+                kv("event_normalized", "ws.subscribe.denied"),
+                kv("category", "WEBSOCKET"),
+                kv("outcome", "FAILURE"),
+                kv("severity", "MEDIUM"),
+                kv("user", username),
+                kv("sessionId", sessionId),
+                kv("destination", destination),
+                kv("ip", ip),
+                kv("ip_private", isPrivateIp(ip)),
+                kv("traceId", traceId),
+                kv("source", "remoteflow-backend"),
+                kv("connection_type", "WEBSOCKET"),
+                kv("layer", "REALTIME"));
+    }
+
+    private String resolveIp(StompHeaderAccessor accessor) {
+        if (accessor != null && accessor.getSessionAttributes() != null) {
+            Object ip = accessor.getSessionAttributes().get("ip");
+            if (ip != null)
+                return ip.toString();
+        }
+        return "unknown";
+    }
+
+    private boolean isPrivateIp(String ip) {
+        if (ip == null || "unknown".equalsIgnoreCase(ip))
+            return false;
+        return ip.startsWith("10.") ||
+                ip.startsWith("192.168.") ||
+                ip.matches("^172\\.(1[6-9]|2[0-9]|3[0-1])\\..*");
     }
 
     private Authentication toAuthentication(Object principal) {
@@ -251,9 +315,9 @@ public class StompJwtChannelInterceptor implements ChannelInterceptor {
     }
 
     private void requireRoleAndScope(Collection<? extends GrantedAuthority> authorities,
-                                     String role,
-                                     Set<String> requiredScopes,
-                                     String errorMessage) {
+            String role,
+            Set<String> requiredScopes,
+            String errorMessage) {
         if (!hasRole(authorities, role)) {
             throw new AccessDeniedException(errorMessage);
         }
@@ -261,8 +325,8 @@ public class StompJwtChannelInterceptor implements ChannelInterceptor {
     }
 
     private void requireAnyRole(Collection<? extends GrantedAuthority> authorities,
-                                Set<String> acceptedRoles,
-                                String errorMessage) {
+            Set<String> acceptedRoles,
+            String errorMessage) {
         boolean roleMatched = acceptedRoles.stream().anyMatch(role -> hasRole(authorities, role));
         if (!roleMatched) {
             throw new AccessDeniedException(errorMessage);
@@ -281,8 +345,8 @@ public class StompJwtChannelInterceptor implements ChannelInterceptor {
     }
 
     private void requireAnyScope(Collection<? extends GrantedAuthority> authorities,
-                                 Set<String> requiredScopes,
-                                 String errorMessage) {
+            Set<String> requiredScopes,
+            String errorMessage) {
         Set<String> normalizedScopes = authorities.stream()
                 .map(GrantedAuthority::getAuthority)
                 .filter(Objects::nonNull)

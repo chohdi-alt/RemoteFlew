@@ -1,0 +1,4 @@
+#NOTE: This is a Maven Resolver internal implementation file, its format can be changed without prior notice.
+#Wed Apr 15 12:07:52 WAT 2026
+@default-central-https\://repo.maven.apache.org/maven2/.lastUpdated=1776251272761
+https\://repo.maven.apache.org/maven2/.error=Could not transfer artifact org.testcontainers\:mariadb\:pom\:1.19.3 from/to central (https\://repo.maven.apache.org/maven2)\: transfer failed for https\://repo.maven.apache.org/maven2/org/testcontainers/mariadb/1.19.3/mariadb-1.19.3.pom

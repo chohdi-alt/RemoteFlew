@@ -37,6 +37,12 @@ import tn.pi.remoteflowapplication.domain.entity.TeleworkRequest;
 import tn.pi.remoteflowapplication.domain.exception.BusinessException;
 import tn.pi.remoteflowapplication.domain.state.RequestStatus;
 import tn.pi.remoteflowapplication.infrastructure.persistence.SpringTeleworkScoreJpaRepository;
+import tn.pi.remoteflowapplication.infrastructure.security.ClientIpResolver;
+import jakarta.servlet.http.HttpServletRequest;
+import static net.logstash.logback.argument.StructuredArguments.kv;
+import org.slf4j.MDC;
+import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.core.Authentication;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -57,6 +63,7 @@ public class AdminController {
     private final TeleworkRequestRepository teleworkRequestRepository;
     private final DocumentStoragePort documentStoragePort;
     private final SpringTeleworkScoreJpaRepository teleworkScoreRepository;
+    private final ClientIpResolver clientIpResolver;
 
     public AdminController(
             AdminUserService adminUserService,
@@ -65,7 +72,8 @@ public class AdminController {
             RoleService roleService,
             TeleworkRequestRepository teleworkRequestRepository,
             DocumentStoragePort documentStoragePort,
-            SpringTeleworkScoreJpaRepository teleworkScoreRepository) {
+            SpringTeleworkScoreJpaRepository teleworkScoreRepository,
+            ClientIpResolver clientIpResolver) {
         this.adminUserService = adminUserService;
         this.auditLogQueryService = auditLogQueryService;
         this.systemConfigurationService = systemConfigurationService;
@@ -73,6 +81,7 @@ public class AdminController {
         this.teleworkRequestRepository = teleworkRequestRepository;
         this.documentStoragePort = documentStoragePort;
         this.teleworkScoreRepository = teleworkScoreRepository;
+        this.clientIpResolver = clientIpResolver;
     }
 
     @GetMapping("/users")
@@ -130,41 +139,125 @@ public class AdminController {
     }
 
     @PutMapping("/config/telework-quota")
-    public TeleworkQuotaConfigResponse updateTeleworkQuota(@RequestBody @Valid TeleworkQuotaConfigRequest request) {
+    public TeleworkQuotaConfigResponse updateTeleworkQuota(
+            @RequestBody @Valid TeleworkQuotaConfigRequest request,
+            HttpServletRequest httpRequest) {
+        int originalValue = systemConfigurationService.getTeleworkMaxDaysPerWeek();
         int maxDaysPerWeek = systemConfigurationService.updateTeleworkMaxDaysPerWeek(request.maxDaysPerWeek());
+
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        String adminUser = (auth != null) ? auth.getName() : "system";
+        String ip = clientIpResolver.resolve(httpRequest);
+        String traceId = MDC.get("traceId") != null ? MDC.get("traceId") : "N/A";
+
+        log.warn("ADMIN_EVENT",
+                kv("event", "ADMIN_CONFIG_UPDATED"),
+                kv("event_normalized", "admin.config.updated"),
+                kv("category", "ADMIN"),
+                kv("outcome", "SUCCESS"),
+                kv("severity", "HIGH"),
+                kv("adminUser", adminUser),
+                kv("configKey", "telework.max-days-per-week"),
+                kv("oldValue", originalValue),
+                kv("newValue", maxDaysPerWeek),
+                kv("ip", ip),
+                kv("ip_private", isPrivateIp(ip)),
+                kv("traceId", traceId),
+                kv("source", "remoteflow-backend"),
+                kv("connection_type", "HTTP"),
+                kv("layer", "APPLICATION"));
+
         return new TeleworkQuotaConfigResponse(maxDaysPerWeek);
     }
 
     @GetMapping("/archives")
-    public List<ArchiveSummaryDTO> getArchivedRequests() {
+    public List<ArchiveSummaryDTO> getArchivedRequests(HttpServletRequest request) {
         List<ArchiveSummaryDTO> result = teleworkRequestRepository.findArchivedRequests().stream()
                 .map(this::toArchiveSummaryDTO)
                 .toList();
-        log.info("[AUDIT] GET /api/admin/archives -> {} record(s) returned", result.size());
+
+        String ip = clientIpResolver.resolve(request);
+        String traceId = getTraceId();
+        String user = getCurrentUser();
+
+        log.info("FILE_EVENT",
+                kv("event", "FILE_ARCHIVE_LIST"),
+                kv("event_normalized", "file.archive.list"),
+                kv("category", "FILE"),
+                kv("outcome", "SUCCESS"),
+                kv("severity", "MEDIUM"),
+                kv("user", user),
+                kv("count", result.size()),
+                kv("ip", ip),
+                kv("ip_private", isPrivateIp(ip)),
+                kv("traceId", traceId),
+                kv("connection_type", "HTTP"),
+                kv("layer", "APPLICATION"),
+                kv("source", "remoteflow-backend"));
+
         return result;
     }
 
     @GetMapping("/archives/{requestId}/view")
-    public ResponseEntity<byte[]> viewArchivePdf(@PathVariable Long requestId) {
-        TeleworkRequest request = teleworkRequestRepository.findById(requestId)
-                .orElseThrow(() -> new BusinessException("Request not found"));
+    public ResponseEntity<byte[]> viewArchivePdf(@PathVariable Long requestId, HttpServletRequest httpRequest) {
+        String ip = clientIpResolver.resolve(httpRequest);
+        String traceId = getTraceId();
+        String user = getCurrentUser();
+        MDC.put("user", user);
 
-        String archiveNodeId = normalizeNodeId(request.getArchiveNodeId());
-        if (archiveNodeId == null || archiveNodeId.isBlank()) {
-            throw new BusinessException("No archive found for request " + requestId);
+        try {
+            TeleworkRequest request = teleworkRequestRepository.findById(requestId)
+                    .orElseThrow(() -> new BusinessException("Request not found"));
+
+            String archiveNodeId = normalizeNodeId(request.getArchiveNodeId());
+            if (archiveNodeId == null || archiveNodeId.isBlank()) {
+                throw new BusinessException("No archive found for request " + requestId);
+            }
+
+            log.warn("FILE_EVENT",
+                    kv("event", "FILE_ARCHIVE_DOWNLOAD"),
+                    kv("event_normalized", "file.archive.download"),
+                    kv("category", "FILE"),
+                    kv("outcome", "SUCCESS"),
+                    kv("severity", "HIGH"),
+                    kv("user", user),
+                    kv("requestId", requestId),
+                    kv("nodeId", archiveNodeId),
+                    kv("ip", ip),
+                    kv("ip_private", isPrivateIp(ip)),
+                    kv("traceId", traceId),
+                    kv("connection_type", "HTTP"),
+                    kv("layer", "APPLICATION"),
+                    kv("source", "remoteflow-backend"));
+
+            byte[] pdfBytes = documentStoragePort.download(archiveNodeId);
+            return ResponseEntity.ok()
+                    .contentType(MediaType.APPLICATION_OCTET_STREAM)
+                    .header("X-Content-Type-Options", "nosniff")
+                    .header("Content-Security-Policy", "default-src 'none';")
+                    .header(HttpHeaders.CONTENT_DISPOSITION,
+                            org.springframework.http.ContentDisposition.attachment()
+                                    .filename("archive_" + requestId + ".pdf").build().toString())
+                    .body(pdfBytes);
+        } catch (Exception ex) {
+            log.error("FILE_EVENT",
+                    kv("event", "FILE_ARCHIVE_DOWNLOAD_FAILED"),
+                    kv("event_normalized", "file.archive.download.failed"),
+                    kv("category", "FILE"),
+                    kv("outcome", "FAILURE"),
+                    kv("severity", "HIGH"),
+                    kv("user", user),
+                    kv("requestId", requestId),
+                    kv("ip", ip),
+                    kv("ip_private", isPrivateIp(ip)),
+                    kv("traceId", traceId),
+                    kv("error", ex.getClass().getSimpleName()),
+                    kv("error_message", ex.getMessage()),
+                    kv("connection_type", "HTTP"),
+                    kv("layer", "APPLICATION"),
+                    kv("source", "remoteflow-backend"));
+            throw ex;
         }
-
-        log.info("[ARCHIVE_DOWNLOAD] requestId={} nodeId={}", requestId, archiveNodeId);
-
-        byte[] pdfBytes = documentStoragePort.download(archiveNodeId);
-        return ResponseEntity.ok()
-                .contentType(MediaType.APPLICATION_OCTET_STREAM)
-                .header("X-Content-Type-Options", "nosniff")
-                .header("Content-Security-Policy", "default-src 'none';")
-                .header(HttpHeaders.CONTENT_DISPOSITION,
-                        org.springframework.http.ContentDisposition.attachment()
-                                .filename("archive_" + requestId + ".pdf").build().toString())
-                .body(pdfBytes);
     }
 
     private ArchiveSummaryDTO toArchiveSummaryDTO(TeleworkRequest request) {
@@ -197,6 +290,14 @@ public class AdminController {
                 score == null ? null : score.getTotalScore());
     }
 
+    private boolean isPrivateIp(String ip) {
+        if (ip == null || "unknown".equalsIgnoreCase(ip))
+            return false;
+        return ip.startsWith("10.") ||
+                ip.startsWith("192.168.") ||
+                ip.matches("^172\\.(1[6-9]|2[0-9]|3[0-1])\\..*");
+    }
+
     private String normalizeNodeId(String nodeId) {
         if (nodeId == null) {
             return null;
@@ -206,5 +307,15 @@ public class AdminController {
             return value.substring(WORKSPACE_PREFIX.length());
         }
         return value;
+    }
+
+    private String getCurrentUser() {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        return (auth != null) ? auth.getName() : "anonymous";
+    }
+
+    private String getTraceId() {
+        String traceId = MDC.get("traceId");
+        return (traceId != null) ? traceId : "N/A";
     }
 }

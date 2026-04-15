@@ -29,6 +29,13 @@ import tn.pi.remoteflowapplication.domain.exception.AuthenticationFailedExceptio
 import tn.pi.remoteflowapplication.domain.exception.BusinessException;
 import tn.pi.remoteflowapplication.infrastructure.security.KeycloakAuthService;
 import tn.pi.remoteflowapplication.infrastructure.security.KeycloakTokenService;
+import tn.pi.remoteflowapplication.infrastructure.security.ClientIpResolver;
+
+import static net.logstash.logback.argument.StructuredArguments.kv;
+import org.slf4j.MDC;
+import org.springframework.web.context.request.RequestContextHolder;
+import org.springframework.web.context.request.ServletRequestAttributes;
+import jakarta.servlet.http.HttpServletRequest;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -48,36 +55,80 @@ public class AuthController {
     private final ActivationTokenService activationTokenService;
     private final UserRepository userRepository;
     private final LoginProtectionService loginProtectionService;
+    private final ClientIpResolver clientIpResolver;
 
     public AuthController(
             KeycloakTokenService keycloakTokenService,
             KeycloakAuthService keycloakAuthService,
             ActivationTokenService activationTokenService,
             UserRepository userRepository,
-            LoginProtectionService loginProtectionService) {
+            LoginProtectionService loginProtectionService,
+            ClientIpResolver clientIpResolver) {
         this.keycloakTokenService = keycloakTokenService;
         this.keycloakAuthService = keycloakAuthService;
         this.activationTokenService = activationTokenService;
         this.userRepository = userRepository;
         this.loginProtectionService = loginProtectionService;
+        this.clientIpResolver = clientIpResolver;
     }
 
     @PostMapping("/login")
     public ResponseEntity<?> login(@Valid @RequestBody LoginRequest request) {
-        logger.info("event=AUTH_LOGIN_ATTEMPT username={}", request.getUsername());
+        HttpServletRequest httpRequest = getRequest();
+        String ip = clientIpResolver.resolve(httpRequest);
+
+        logger.info("AUTH_EVENT",
+                kv("event", "AUTH_LOGIN_ATTEMPT"),
+                kv("event_normalized", "auth.login.attempt"),
+                kv("category", "AUTH"),
+                kv("outcome", "ATTEMPT"),
+                kv("severity", "LOW"),
+                kv("user", request.getUsername()),
+                kv("ip", ip),
+                kv("ip_private", isPrivateIp(ip)),
+                kv("traceId", getTraceId()),
+                kv("connection_type", "HTTP"),
+                kv("layer", "APPLICATION"),
+                kv("source", "remoteflow-backend"));
+
         try {
             AuthTokenResponse token = keycloakTokenService.login(request.getUsername(), request.getPassword());
             loginProtectionService.onLoginSuccess(request.getUsername());
-            logger.info("event=AUTH_LOGIN_SUCCESS username={} roleCount={}",
-                    request.getUsername(),
-                    token.getRoles() == null ? 0 : token.getRoles().size());
+
+            logger.info("AUTH_EVENT",
+                    kv("event", "AUTH_LOGIN_SUCCESS"),
+                    kv("event_normalized", "auth.login.success"),
+                    kv("category", "AUTH"),
+                    kv("outcome", "SUCCESS"),
+                    kv("severity", "LOW"),
+                    kv("user", request.getUsername()),
+                    kv("roleCount", token.getRoles() == null ? 0 : token.getRoles().size()),
+                    kv("ip", ip),
+                    kv("ip_private", isPrivateIp(ip)),
+                    kv("traceId", getTraceId()),
+                    kv("source", "remoteflow-backend"),
+                    kv("connection_type", "HTTP"),
+                    kv("layer", "APPLICATION"));
+
             return ResponseEntity.ok(token);
         } catch (AuthenticationFailedException ex) {
             loginProtectionService.onLoginFailure(request.getUsername(), ex);
-            logger.warn("event=AUTH_LOGIN_FAILURE username={} errorCode={} message={}",
-                    request.getUsername(),
-                    ex.getErrorCode(),
-                    ex.getMessage());
+
+            logger.warn("AUTH_EVENT",
+                    kv("event", "AUTH_LOGIN_FAILURE"),
+                    kv("event_normalized", "auth.login.failure"),
+                    kv("category", "AUTH"),
+                    kv("outcome", "FAILURE"),
+                    kv("severity", "MEDIUM"),
+                    kv("user", request.getUsername()),
+                    kv("errorCode", ex.getErrorCode()),
+                    kv("error_message", ex.getMessage()),
+                    kv("ip", ip),
+                    kv("ip_private", isPrivateIp(ip)),
+                    kv("traceId", getTraceId()),
+                    kv("source", "remoteflow-backend"),
+                    kv("connection_type", "HTTP"),
+                    kv("layer", "APPLICATION"));
 
             if ("PASSWORD_UPDATE_REQUIRED".equalsIgnoreCase(ex.getErrorCode())) {
                 return ResponseEntity.status(HttpStatus.FORBIDDEN).body(
@@ -92,7 +143,20 @@ public class AuthController {
 
     @PostMapping("/change-password")
     public ResponseEntity<ChangePasswordResponse> changePassword(@Valid @RequestBody ChangePasswordRequest request) {
-        logger.info("event=AUTH_PASSWORD_CHANGE_ATTEMPT username={}", request.username());
+        String ip = clientIpResolver.resolve(getRequest());
+        logger.info("AUTH_EVENT",
+                kv("event", "AUTH_PASSWORD_CHANGE_ATTEMPT"),
+                kv("event_normalized", "auth.password.change.attempt"),
+                kv("category", "AUTH"),
+                kv("outcome", "ATTEMPT"),
+                kv("severity", "LOW"),
+                kv("user", request.username()),
+                kv("ip", ip),
+                kv("ip_private", isPrivateIp(ip)),
+                kv("traceId", getTraceId()),
+                kv("connection_type", "HTTP"),
+                kv("layer", "APPLICATION"),
+                kv("source", "remoteflow-backend"));
 
         ensureTemporaryPasswordIsValid(request.username(), request.temporaryPassword());
 
@@ -116,30 +180,87 @@ public class AuthController {
         try {
             keycloakAuthService.resetPassword(userId, request.newPassword());
             keycloakAuthService.clearRequiredAction(userId, REQUIRED_ACTION_UPDATE_PASSWORD);
-            logger.info("event=AUTH_PASSWORD_CHANGE_SUCCESS username={} userId={}", request.username(), userId);
+            logger.info("AUTH_EVENT",
+                    kv("event", "AUTH_PASSWORD_CHANGE_SUCCESS"),
+                    kv("event_normalized", "auth.password.change.success"),
+                    kv("category", "AUTH"),
+                    kv("outcome", "SUCCESS"),
+                    kv("severity", "LOW"),
+                    kv("user", request.username()),
+                    kv("userId", userId),
+                    kv("ip", ip),
+                    kv("ip_private", isPrivateIp(ip)),
+                    kv("traceId", getTraceId()),
+                    kv("connection_type", "HTTP"),
+                    kv("layer", "APPLICATION"),
+                    kv("source", "remoteflow-backend"));
             return ResponseEntity.ok(new ChangePasswordResponse(true, request.username()));
         } catch (Exception ex) {
-            logger.error(
-                    "event=AUTH_PASSWORD_CHANGE_FAILED username={} userId={} reason={}",
-                    request.username(),
-                    userId,
-                    ex.getMessage(),
-                    ex);
+            logger.error("AUTH_EVENT",
+                    kv("event", "AUTH_PASSWORD_CHANGE_FAILED"),
+                    kv("event_normalized", "auth.password.change.failed"),
+                    kv("category", "AUTH"),
+                    kv("outcome", "FAILURE"),
+                    kv("severity", "MEDIUM"),
+                    kv("user", request.username()),
+                    kv("userId", userId),
+                    kv("reason", ex.getMessage()),
+                    kv("ip", ip),
+                    kv("ip_private", isPrivateIp(ip)),
+                    kv("traceId", getTraceId()),
+                    kv("connection_type", "HTTP"),
+                    kv("layer", "APPLICATION"),
+                    kv("source", "remoteflow-backend"));
             throw new BusinessException("Unable to change password right now. Please retry.", ex);
         }
     }
 
     @PostMapping("/refresh")
     public AuthTokenResponse refresh(@Valid @RequestBody RefreshRequest request) {
-        logger.info("event=TOKEN_REFRESH_ATTEMPT hasRefreshToken={}",
-                request.getRefreshToken() != null && !request.getRefreshToken().isBlank());
+        String ip = clientIpResolver.resolve(getRequest());
+        logger.info("AUTH_EVENT",
+                kv("event", "TOKEN_REFRESH_ATTEMPT"),
+                kv("event_normalized", "auth.token.refresh.attempt"),
+                kv("category", "AUTH"),
+                kv("outcome", "ATTEMPT"),
+                kv("severity", "LOW"),
+                kv("ip", ip),
+                kv("ip_private", isPrivateIp(ip)),
+                kv("traceId", getTraceId()),
+                kv("connection_type", "HTTP"),
+                kv("layer", "APPLICATION"),
+                kv("source", "remoteflow-backend"));
         try {
             AuthTokenResponse token = keycloakTokenService.refresh(request.getRefreshToken());
-            logger.info("event=TOKEN_REFRESH_SUCCESS roleCount={}",
-                    token.getRoles() == null ? 0 : token.getRoles().size());
+            logger.info("AUTH_EVENT",
+                    kv("event", "TOKEN_REFRESH_SUCCESS"),
+                    kv("event_normalized", "auth.token.refresh.success"),
+                    kv("category", "AUTH"),
+                    kv("outcome", "SUCCESS"),
+                    kv("severity", "LOW"),
+                    kv("roleCount", token.getRoles() == null ? 0 : token.getRoles().size()),
+                    kv("ip", ip),
+                    kv("ip_private", isPrivateIp(ip)),
+                    kv("traceId", getTraceId()),
+                    kv("connection_type", "HTTP"),
+                    kv("layer", "APPLICATION"),
+                    kv("source", "remoteflow-backend"));
             return token;
         } catch (AuthenticationFailedException ex) {
-            logger.warn("event=TOKEN_REFRESH_FAILURE errorCode={} message={}", ex.getErrorCode(), ex.getMessage());
+            logger.warn("AUTH_EVENT",
+                    kv("event", "TOKEN_REFRESH_FAILURE"),
+                    kv("event_normalized", "auth.token.refresh.failed"),
+                    kv("category", "AUTH"),
+                    kv("outcome", "FAILURE"),
+                    kv("severity", "MEDIUM"),
+                    kv("errorCode", ex.getErrorCode()),
+                    kv("error_message", ex.getMessage()),
+                    kv("ip", ip),
+                    kv("ip_private", isPrivateIp(ip)),
+                    kv("traceId", getTraceId()),
+                    kv("connection_type", "HTTP"),
+                    kv("layer", "APPLICATION"),
+                    kv("source", "remoteflow-backend"));
             throw ex;
         }
     }
@@ -168,19 +289,65 @@ public class AuthController {
                 userRepository.save(user);
             });
 
-            logger.info("event=AUTH_ACTIVATION_SUCCESS username={} keycloakUserId={}",
-                    activationToken.getUsername(),
-                    keycloakUserId);
+            String ip = clientIpResolver.resolve(getRequest());
+            logger.info("AUTH_EVENT",
+                    kv("event", "AUTH_ACTIVATION_SUCCESS"),
+                    kv("event_normalized", "auth.activation.success"),
+                    kv("category", "AUTH"),
+                    kv("outcome", "SUCCESS"),
+                    kv("severity", "LOW"),
+                    kv("user", activationToken.getUsername()),
+                    kv("keycloakUserId", keycloakUserId),
+                    kv("ip", ip),
+                    kv("ip_private", isPrivateIp(ip)),
+                    kv("traceId", getTraceId()),
+                    kv("connection_type", "HTTP"),
+                    kv("layer", "APPLICATION"),
+                    kv("source", "remoteflow-backend"));
             return ResponseEntity.ok(new ActivateAccountResponse(true, activationToken.getUsername()));
         } catch (BusinessException ex) {
             throw ex;
         } catch (Exception ex) {
-            logger.error("event=AUTH_ACTIVATION_FAILED username={} reason={}",
-                    activationToken.getUsername(),
-                    ex.getMessage(),
-                    ex);
+            String ip = clientIpResolver.resolve(getRequest());
+            logger.error("AUTH_EVENT",
+                    kv("event", "AUTH_ACTIVATION_FAILED"),
+                    kv("event_normalized", "auth.activation.failed"),
+                    kv("category", "AUTH"),
+                    kv("outcome", "FAILURE"),
+                    kv("severity", "MEDIUM"),
+                    kv("user", activationToken.getUsername()),
+                    kv("reason", ex.getMessage()),
+                    kv("ip", ip),
+                    kv("ip_private", isPrivateIp(ip)),
+                    kv("traceId", getTraceId()),
+                    kv("connection_type", "HTTP"),
+                    kv("layer", "APPLICATION"),
+                    kv("source", "remoteflow-backend"));
             throw new BusinessException("Unable to activate account right now. Please retry.", ex);
         }
+    }
+
+    @PostMapping("/logout")
+    public ResponseEntity<Void> logout(Authentication authentication) {
+        String user = (authentication != null) ? authentication.getName() : "anonymous";
+        String ip = clientIpResolver.resolve(getRequest());
+        String traceId = getTraceId();
+
+        logger.info("AUTH_EVENT",
+                kv("event", "AUTH_LOGOUT"),
+                kv("event_normalized", "auth.logout"),
+                kv("category", "AUTH"),
+                kv("outcome", "SUCCESS"),
+                kv("severity", "LOW"),
+                kv("user", user),
+                kv("ip", ip),
+                kv("ip_private", isPrivateIp(ip)),
+                kv("traceId", traceId),
+                kv("connection_type", "HTTP"),
+                kv("layer", "APPLICATION"),
+                kv("source", "remoteflow-backend"));
+
+        return ResponseEntity.ok().build();
     }
 
     @GetMapping("/me")
@@ -228,5 +395,21 @@ public class AuthController {
                 "invalid_grant",
                 "Temporary password validation failed",
                 HttpStatus.UNAUTHORIZED.value());
+    }
+
+    private HttpServletRequest getRequest() {
+        ServletRequestAttributes attrs = (ServletRequestAttributes) RequestContextHolder.getRequestAttributes();
+        return attrs != null ? attrs.getRequest() : null;
+    }
+
+    private String getTraceId() {
+        String traceId = MDC.get("traceId");
+        return (traceId != null) ? traceId : "N/A";
+    }
+
+    private boolean isPrivateIp(String ip) {
+        return ip != null && (ip.startsWith("10.") ||
+                ip.startsWith("192.168.") ||
+                ip.matches("^172\\.(1[6-9]|2[0-9]|3[0-1])\\..*"));
     }
 }

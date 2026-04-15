@@ -54,7 +54,7 @@ class AdminUserServiceImplTest {
                 teamService,
                 keycloakUserService,
                 accountActivationService,
-                loginProtectionService);
+                loginProtectionService, null);
     }
 
     @Test

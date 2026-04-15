@@ -1,0 +1,142 @@
+name: RemoteFlow Test Pipeline
+
+on:
+  push:
+    branches:
+      - "**"
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  unit-tests:
+    name: Fast Logic (Unit)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: maven
+      - name: Run Unit tests
+        run: ./mvnw -B -q -Ptest-unit test
+      - name: Publish Test Report
+        uses: scacap/action-surefire-report@v1
+        if: always()
+      - name: Upload Coverage
+        uses: actions/upload-artifact@v4
+        with:
+          name: unit-coverage
+          path: target/site/jacoco/
+
+  security-tests:
+    name: Medium (Security)
+    runs-on: ubuntu-latest
+    needs: unit-tests
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: maven
+      - name: Run Security tests
+        run: ./mvnw -B -q -Ptest-security test
+      - name: Publish Test Report
+        uses: scacap/action-surefire-report@v1
+        if: always()
+
+  integration-tests:
+    name: Heavy (Integration + Workflow)
+    runs-on: ubuntu-latest
+    needs: [unit-tests, security-tests]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: maven
+      - name: Run Integration tests
+        run: ./mvnw -B -q -Ptest-integration test
+      - name: Run Workflow tests
+        run: ./mvnw -B -q -Ptest-workflow test
+      - name: Publish Test Report
+        uses: scacap/action-surefire-report@v1
+        if: always()
+
+  e2e:
+    name: Optional (E2E Playwright)
+    runs-on: ubuntu-latest
+    needs: integration-tests
+    if: github.repository == 'tn-pi/RemoteFlowApplication'
+    env:
+      BACKEND_BASE_URL: ${{ secrets.E2E_BACKEND_BASE_URL }}
+      KEYCLOAK_URL: ${{ secrets.E2E_KEYCLOAK_URL }}
+      KEYCLOAK_REALM: ${{ secrets.E2E_KEYCLOAK_REALM }}
+      KEYCLOAK_CLIENT_ID: ${{ secrets.E2E_KEYCLOAK_CLIENT_ID }}
+      KEYCLOAK_CLIENT_SECRET: ${{ secrets.E2E_KEYCLOAK_CLIENT_SECRET }}
+      EMPLOYEE_USERNAME: ${{ secrets.E2E_EMPLOYEE_USERNAME }}
+      EMPLOYEE_PASSWORD: ${{ secrets.E2E_EMPLOYEE_PASSWORD }}
+      MANAGER_USERNAME: ${{ secrets.E2E_MANAGER_USERNAME }}
+      MANAGER_PASSWORD: ${{ secrets.E2E_MANAGER_PASSWORD }}
+      HR_USERNAME: ${{ secrets.E2E_HR_USERNAME }}
+      HR_PASSWORD: ${{ secrets.E2E_HR_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+      - name: Install dependencies
+        working-directory: tests/e2e/playwright
+        run: npm install
+      - name: Install browser
+        working-directory: tests/e2e/playwright
+        run: npx playwright install --with-deps chromium
+      - name: Run e2e tests
+        working-directory: tests/e2e/playwright
+        run: npm test
+      - name: Upload Playwright Report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: playwright-report
+          path: tests/e2e/playwright/playwright-report/
+
+  performance:
+    name: Performance SLA (manual/scheduled)
+    if: github.event_name == 'workflow_dispatch' || github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    needs: integration-tests
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run JMeter
+        run: |
+          mkdir -p results
+          docker run --rm -v ${PWD}:/opt/jmeter -w /opt/jmeter \
+            justb4/jmeter -n \
+            -JBASE_HOST="${{ secrets.PERF_BASE_HOST }}" \
+            -JBASE_PORT="${{ secrets.PERF_BASE_PORT }}" \
+            -JEMPLOYEE_TOKEN="${{ secrets.PERF_EMPLOYEE_TOKEN }}" \
+            -JMANAGER_TOKEN="${{ secrets.PERF_MANAGER_TOKEN }}" \
+            -t tests/performance/jmeter/telework-load-test.jmx \
+            -l results/results.jtl
+      - name: Validate SLA (Fail if error rate > 0%)
+        run: |
+          error_count=$(awk -F',' 'NR>1 {if ($8 == "false") count++} END {print count+0}' results/results.jtl)
+          if [ "$error_count" -gt 0 ]; then
+            echo "::error::Performance SLA Violated: $error_count errors detected."
+            exit 1
+          fi
+      - name: Upload Results
+        uses: actions/upload-artifact@v4
+        with:
+          name: jmeter-results
+          path: results/
+
+
