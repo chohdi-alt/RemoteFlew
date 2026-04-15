@@ -13,14 +13,14 @@ import java.util.Map;
 import java.util.concurrent.TimeUnit;
 
 @Service
-public class CamundaWorkflowService implements WorkflowOrchestrationPort {
+public class CamundaWorkFlowService implements WorkflowOrchestrationPort {
 
-    private static final Logger logger = LoggerFactory.getLogger(CamundaWorkflowService.class);
+    private static final Logger logger = LoggerFactory.getLogger(CamundaWorkFlowService.class);
     private static final String TELEWORK_PROCESS_ID = "telework_process";
 
     private final ZeebeClient zeebeClient;
 
-    public CamundaWorkflowService(ZeebeClient zeebeClient) {
+    public CamundaWorkFlowService(ZeebeClient zeebeClient) {
         this.zeebeClient = zeebeClient;
     }
 
