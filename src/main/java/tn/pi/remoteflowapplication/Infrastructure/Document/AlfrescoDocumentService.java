@@ -19,11 +19,12 @@ import java.util.List;
 import java.util.Map;
 import java.util.function.Supplier;
 import org.springframework.web.client.HttpStatusCodeException;
-import lombok.extern.slf4j.Slf4j;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
-@Slf4j
 @Service
 public class AlfrescoDocumentService implements DocumentStoragePort {
+    private static final Logger log = LoggerFactory.getLogger(AlfrescoDocumentService.class);
     private static final String WORKSPACE_NODE_REF_PREFIX = "workspace://SpacesStore/";
 
     @Value("${alfresco.base-url}")
