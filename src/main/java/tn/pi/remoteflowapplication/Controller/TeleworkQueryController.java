@@ -104,6 +104,9 @@ public class TeleworkQueryController {
 
         try {
             AgreementFileDTO file = agreementService.downloadAgreementPdf(requestId, authentication);
+            if (file == null || file.content() == null) {
+                return ResponseEntity.notFound().build();
+            }
             ByteArrayResource resource = new ByteArrayResource(file.content());
 
             logger.warn("FILE_EVENT",

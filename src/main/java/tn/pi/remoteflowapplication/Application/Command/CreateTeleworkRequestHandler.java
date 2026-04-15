@@ -73,6 +73,10 @@ public class CreateTeleworkRequestHandler {
             throw new BusinessException("Identifiant utilisateur manquant");
         }
 
+        if (dto.getStartDate() != null && dto.getEndDate() != null && dto.getStartDate().isAfter(dto.getEndDate())) {
+            throw new IllegalArgumentException("Start date cannot be after end date");
+        }
+
         TeleworkRequest request = TeleworkRequest.create(
                 employeeUsername,
                 dto.getStartDate(),
