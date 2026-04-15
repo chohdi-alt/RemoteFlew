@@ -12,15 +12,15 @@ import tn.pi.remoteflowapplication.domain.entity.User;
 import tn.pi.remoteflowapplication.domain.exception.BusinessException;
 import tn.pi.remoteflowapplication.application.port.out.TeleworkRequestRepository;
 import tn.pi.remoteflowapplication.domain.state.RequestStatus;
+import tn.pi.remoteflowapplication.tests.integration.BaseIntegrationIT;
 
 import java.time.LocalDate;
 
 import static org.junit.jupiter.api.Assertions.*;
 
 @Tag("workflow")
-@SpringBootTest
 @Transactional
-class WorkflowIntegrityIT {
+class WorkflowIntegrityIT extends BaseIntegrationIT {
 
     @Autowired
     private CreateTeleworkRequestHandler handler;

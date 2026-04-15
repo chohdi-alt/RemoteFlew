@@ -27,10 +27,9 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
 @Tag("integration")
-@SpringBootTest
 @AutoConfigureMockMvc
 @Import(TestJwtSecurityConfiguration.class)
-class ApiContractIT {
+class ApiContractIT extends BaseIntegrationIT {
 
     @Autowired
     private MockMvc mockMvc;

@@ -30,10 +30,7 @@ import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 @Tag("integration")
-@SpringBootTest(
-        webEnvironment = SpringBootTest.WebEnvironment.NONE,
-        classes = {AlfrescoConfig.class, AlfrescoDocumentService.class})
-class AlfrescoDocumentIntegrationIT {
+class AlfrescoDocumentIntegrationIT extends BaseIntegrationIT {
 
     private static final WireMockServer WIREMOCK = new WireMockServer(options().dynamicPort());
 
@@ -42,7 +39,13 @@ class AlfrescoDocumentIntegrationIT {
     }
 
     @DynamicPropertySource
-    static void registerAlfrescoProperties(DynamicPropertyRegistry registry) {
+    static void registerProperties(DynamicPropertyRegistry registry) {
+        // Testcontainers DB
+        registry.add("spring.datasource.url", mariaDB::getJdbcUrl);
+        registry.add("spring.datasource.username", mariaDB::getUsername);
+        registry.add("spring.datasource.password", mariaDB::getPassword);
+
+        // WireMock Alfresco
         registry.add("alfresco.base-url", () -> "http://localhost:" + WIREMOCK.port() + "/alfresco");
         registry.add("alfresco.username", () -> "alfresco-user");
         registry.add("alfresco.password", () -> "secret");
