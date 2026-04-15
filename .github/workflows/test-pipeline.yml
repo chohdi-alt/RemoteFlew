@@ -11,6 +11,11 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+permissions:
+  contents: read
+  checks: write
+  pull-requests: write
+
 env:
   # Global safeguards for DB and Flyway
   DB_USERNAME: root
@@ -27,6 +32,8 @@ jobs:
           distribution: temurin
           java-version: "17"
           cache: maven
+      - name: Fix mvnw permission
+        run: chmod +x mvnw
       - name: Run Unit tests
         run: ./mvnw -B -q -Ptest-unit test
       - name: Publish Test Report
@@ -49,6 +56,8 @@ jobs:
           distribution: temurin
           java-version: "17"
           cache: maven
+      - name: Fix mvnw permission
+        run: chmod +x mvnw
       - name: Run Security tests
         run: ./mvnw -B -q -Ptest-security test
       - name: Publish Test Report
@@ -102,6 +111,8 @@ jobs:
           distribution: temurin
           java-version: "17"
           cache: maven
+      - name: Fix mvnw permission
+        run: chmod +x mvnw
       - name: Run Integration tests
         run: ./mvnw -B -q -Ptest-integration test
       - name: Run Workflow tests
@@ -129,6 +140,8 @@ jobs:
           - 3307:3306
         options: --health-cmd="mariadb-admin ping" --health-interval=10s --health-timeout=5s --health-retries=3
     steps:
+      - name: Fix mvnw permission
+        run: chmod +x mvnw
       - name: Checkout Backend
         uses: actions/checkout@v4
       - name: Checkout Frontend
@@ -144,6 +157,8 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "20"
+      - name: Fix mvnw permission
+        run: chmod +x mvnw
       
       - name: Build Backend
         run: ./mvnw clean install -DskipTests
@@ -203,6 +218,8 @@ jobs:
           distribution: temurin
           java-version: "17"
           cache: maven
+      - name: Fix mvnw permission
+        run: chmod +x mvnw
       - name: Download all JaCoCo data
         uses: actions/download-artifact@v4
         with:
