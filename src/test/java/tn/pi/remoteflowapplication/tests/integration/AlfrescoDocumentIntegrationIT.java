@@ -6,7 +6,7 @@ import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.http.MediaType;
 import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.test.context.ActiveProfiles;
-import tn.pi.remoteflowapplication.infrastructure.document.AlfrescoDocumentService;
+import tn.pi.remoteflowapplication.application.port.out.DocumentStoragePort;
 
 import java.nio.charset.StandardCharsets;
 
@@ -20,28 +20,29 @@ import static org.mockito.Mockito.when;
 @Tag("integration")
 class AlfrescoDocumentIntegrationIT extends BaseIntegrationIT {
 
-    @MockBean
-    private AlfrescoDocumentService alfrescoService;
+        @MockBean
+        private DocumentStoragePort documentStoragePort;
 
-    @Test
-    void shouldUploadAndDownloadDocumentThroughAlfrescoApi() throws Exception {
-        byte[] storedContent = "%PDF-1.4 test-content".getBytes(StandardCharsets.UTF_8);
+        @Test
+        void shouldUploadAndDownloadDocumentThroughAlfrescoApi() throws Exception {
+                byte[] storedContent = "%PDF-1.4 test-content".getBytes(StandardCharsets.UTF_8);
 
-        when(alfrescoService.upload(any(), eq("workspace://SpacesStore/pending-folder")))
-                .thenReturn("node-123");
-        when(alfrescoService.download("workspace://SpacesStore/node-123"))
-                .thenReturn(storedContent);
+                when(documentStoragePort.upload(any(), eq("workspace://SpacesStore/pending-folder")))
+                                .thenReturn("node-123");
 
-        MockMultipartFile upload = new MockMultipartFile(
-                "file",
-                "justification.pdf",
-                MediaType.APPLICATION_PDF_VALUE,
-                storedContent);
+                when(documentStoragePort.download("workspace://SpacesStore/node-123"))
+                                .thenReturn(storedContent);
 
-        String nodeId = alfrescoService.upload(upload, "workspace://SpacesStore/pending-folder");
-        assertEquals("node-123", nodeId);
+                MockMultipartFile upload = new MockMultipartFile(
+                                "file",
+                                "justification.pdf",
+                                MediaType.APPLICATION_PDF_VALUE,
+                                storedContent);
 
-        byte[] downloaded = alfrescoService.download("workspace://SpacesStore/node-123");
-        assertArrayEquals(storedContent, downloaded);
-    }
+                String nodeId = documentStoragePort.upload(upload, "workspace://SpacesStore/pending-folder");
+                assertEquals("node-123", nodeId);
+
+                byte[] downloaded = documentStoragePort.download("workspace://SpacesStore/node-123");
+                assertArrayEquals(storedContent, downloaded);
+        }
 }

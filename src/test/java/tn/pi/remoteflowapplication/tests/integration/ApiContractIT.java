@@ -4,11 +4,12 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
-import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.context.ActiveProfiles;
+
 import tn.pi.remoteflowapplication.application.dto.EmployeeDashboardDTO;
 import tn.pi.remoteflowapplication.application.dto.TeleworkStatusDTO;
 import tn.pi.remoteflowapplication.application.service.DashboardService;
@@ -23,11 +24,10 @@ import java.util.Map;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.when;
+
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
-import org.springframework.test.context.ActiveProfiles;
- 
 @ActiveProfiles("test")
 @Tag("integration")
 @AutoConfigureMockMvc
@@ -42,7 +42,7 @@ class ApiContractIT extends BaseIntegrationIT {
 
     @MockBean
     private TeleworkStatusQueryService queryService;
- 
+
     private final JwtTestTokenFactory jwtTestTokenFactory = new JwtTestTokenFactory();
 
     @Test
@@ -52,15 +52,26 @@ class ApiContractIT extends BaseIntegrationIT {
                 Map.of(),
                 List.of(),
                 List.of(new TeleworkStatusDTO(
-                        42L, LocalDate.now(), LocalDate.now().plusDays(1),
-                        "SUBMITTED", null, false, "medical", "file-123", "m-ok", "h-ok"))
-        );
-        when(dashboardService.getEmployeeDashboard(anyString(), any(), any())).thenReturn(dto);
+                        42L,
+                        LocalDate.now(),
+                        LocalDate.now().plusDays(1),
+                        "SUBMITTED",
+                        null,
+                        false,
+                        "medical",
+                        "file-123",
+                        "m-ok",
+                        "h-ok")));
+
+        when(dashboardService.getEmployeeDashboard(anyString(), any(), any()))
+                .thenReturn(dto);
 
         mockMvc.perform(get("/api/dashboard/employee")
-                        .header("Authorization", jwtTestTokenFactory.bearerTokenForRole("contract-user", "EMPLOYEE")))
+                .header("Authorization",
+                        jwtTestTokenFactory.bearerTokenForRole("contract-user", "EMPLOYEE")))
                 .andExpect(status().isOk())
                 .andExpect(content().contentType(MediaType.APPLICATION_JSON))
+
                 // Structure validation
                 .andExpect(jsonPath("$.myTotalsByStatus").isMap())
                 .andExpect(jsonPath("$.myMonthlyTrend").isArray())
@@ -72,10 +83,17 @@ class ApiContractIT extends BaseIntegrationIT {
 
     @Test
     void errorResponsesShouldHaveConsistentFormat() throws Exception {
-        // This validates the GlobalExceptionHandler format
-        mockMvc.perform(get("/api/telework/999999") // Non-existent ID, should trigger 404
-                        .header("Authorization", jwtTestTokenFactory.bearerTokenForRole("contract-user", "MANAGER")))
+
+        // 🔥 CRITICAL FIX: simulate NOT FOUND behavior
+        when(queryService.findById(any(), null))
+                .thenThrow(new RuntimeException("Telework not found"));
+
+        mockMvc.perform(get("/api/telework/999999")
+                .header("Authorization",
+                        jwtTestTokenFactory.bearerTokenForRole("contract-user", "MANAGER")))
                 .andExpect(status().isNotFound())
+
+                // Contract validation
                 .andExpect(jsonPath("$.timestamp").exists())
                 .andExpect(jsonPath("$.message").isString())
                 .andExpect(jsonPath("$.path").value("/api/telework/999999"));
