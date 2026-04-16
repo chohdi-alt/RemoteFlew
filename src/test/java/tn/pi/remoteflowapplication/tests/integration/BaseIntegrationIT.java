@@ -9,10 +9,31 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 
 import org.springframework.test.context.ActiveProfiles;
 
+import org.springframework.boot.test.mock.mockito.MockBean;
+import tn.pi.remoteflowapplication.application.port.out.DocumentStoragePort;
+ 
+import org.keycloak.admin.client.Keycloak;
+import io.camunda.zeebe.client.ZeebeClient;
+ 
+ 
+import tn.pi.remoteflowapplication.application.port.out.WorkflowOrchestrationPort;
+ 
 @ActiveProfiles("test")
 @Testcontainers
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 public abstract class BaseIntegrationIT {
+ 
+    @MockBean
+    protected DocumentStoragePort documentStoragePort;
+
+    @MockBean
+    protected Keycloak keycloak;
+
+    @MockBean
+    protected ZeebeClient zeebeClient;
+
+    @MockBean
+    protected WorkflowOrchestrationPort workflowOrchestrationPort;
 
     @Container
     protected static final MariaDBContainer<?> mariaDB = new MariaDBContainer<>("mariadb:11")

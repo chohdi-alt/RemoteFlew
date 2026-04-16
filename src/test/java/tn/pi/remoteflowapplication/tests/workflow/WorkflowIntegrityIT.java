@@ -4,6 +4,7 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.test.context.ActiveProfiles;
 import org.springframework.transaction.annotation.Transactional;
 import tn.pi.remoteflowapplication.application.command.CreateTeleworkRequestHandler;
 import tn.pi.remoteflowapplication.application.dto.CreateTeleworkDTO;
@@ -19,6 +20,7 @@ import java.time.LocalDate;
 import static org.junit.jupiter.api.Assertions.*;
 
 @Tag("workflow")
+@ActiveProfiles("test")
 @Transactional
 class WorkflowIntegrityIT extends BaseIntegrationIT {
 

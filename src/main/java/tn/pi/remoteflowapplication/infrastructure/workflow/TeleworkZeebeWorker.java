@@ -4,10 +4,12 @@ import io.camunda.zeebe.client.api.response.ActivatedJob;
 import io.camunda.zeebe.spring.client.annotation.JobWorker;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 import tn.pi.remoteflowapplication.application.service.WorkflowTaskService;
 
 @Component
+@ConditionalOnProperty(name = "camunda.enabled", havingValue = "true", matchIfMissing = true)
 public class TeleworkZeebeWorker {
 
     private static final Logger logger = LoggerFactory.getLogger(TeleworkZeebeWorker.class);

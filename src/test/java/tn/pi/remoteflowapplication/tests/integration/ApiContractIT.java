@@ -26,6 +26,9 @@ import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
+import org.springframework.test.context.ActiveProfiles;
+ 
+@ActiveProfiles("test")
 @Tag("integration")
 @AutoConfigureMockMvc
 @Import(TestJwtSecurityConfiguration.class)
@@ -39,7 +42,7 @@ class ApiContractIT extends BaseIntegrationIT {
 
     @MockBean
     private TeleworkStatusQueryService queryService;
-
+ 
     private final JwtTestTokenFactory jwtTestTokenFactory = new JwtTestTokenFactory();
 
     @Test
