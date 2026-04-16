@@ -8,9 +8,11 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
 @Component
+@ConditionalOnProperty(name = "keycloak.enabled", havingValue = "true", matchIfMissing = true)
 public class KeycloakBruteForceProtectionInitializer implements ApplicationRunner {
 
     private static final Logger logger = LoggerFactory.getLogger(KeycloakBruteForceProtectionInitializer.class);
@@ -75,8 +77,10 @@ public class KeycloakBruteForceProtectionInitializer implements ApplicationRunne
             LoginProtectionProperties.KeycloakBruteForce target) {
         boolean changed = false;
 
-        changed |= setBooleanIfChanged(realmRepresentation.isBruteForceProtected(), true, realmRepresentation::setBruteForceProtected);
-        changed |= setIntegerIfChanged(realmRepresentation.getFailureFactor(), target.getMaxLoginFailures(), realmRepresentation::setFailureFactor);
+        changed |= setBooleanIfChanged(realmRepresentation.isBruteForceProtected(), true,
+                realmRepresentation::setBruteForceProtected);
+        changed |= setIntegerIfChanged(realmRepresentation.getFailureFactor(), target.getMaxLoginFailures(),
+                realmRepresentation::setFailureFactor);
         changed |= setIntegerIfChanged(
                 realmRepresentation.getWaitIncrementSeconds(),
                 target.getWaitIncrementSeconds(),
@@ -105,7 +109,8 @@ public class KeycloakBruteForceProtectionInitializer implements ApplicationRunne
         return changed;
     }
 
-    private boolean setBooleanIfChanged(Boolean current, boolean expected, java.util.function.Consumer<Boolean> setter) {
+    private boolean setBooleanIfChanged(Boolean current, boolean expected,
+            java.util.function.Consumer<Boolean> setter) {
         if (current != null && current == expected) {
             return false;
         }
