@@ -2,12 +2,14 @@ package tn.pi.remoteflowapplication.infrastructure.bootstrap;
 
 import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import tn.pi.remoteflowapplication.application.service.KeycloakUserSyncService;
 
 @Component
+@ConditionalOnProperty(name = "keycloak.enabled", havingValue = "true", matchIfMissing = true)
 public class KeycloakUserBootstrap implements ApplicationRunner {
 
     private static final Logger logger = LoggerFactory.getLogger(KeycloakUserBootstrap.class);

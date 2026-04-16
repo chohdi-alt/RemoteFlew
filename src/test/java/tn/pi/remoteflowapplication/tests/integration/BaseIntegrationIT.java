@@ -36,7 +36,7 @@ public abstract class BaseIntegrationIT {
     protected WorkflowOrchestrationPort workflowOrchestrationPort;
 
     @Container
-    protected static final MariaDBContainer<?> mariaDB = new MariaDBContainer<>("mariadb:11")
+    protected static final MariaDBContainer<?> mariaDB = new MariaDBContainer<>("mariadb:11.4")
             .withDatabaseName("testdb")
             .withUsername("test")
             .withPassword("test");
@@ -51,10 +51,11 @@ public abstract class BaseIntegrationIT {
         registry.add("spring.flyway.url", mariaDB::getJdbcUrl);
         registry.add("spring.flyway.user", mariaDB::getUsername);
         registry.add("spring.flyway.password", mariaDB::getPassword);
-        
-        // Mocking other infrastructure to avoid localhost connectivity issues in CI
-        registry.add("alfresco.base-url", () -> "http://localhost:8080/alfresco");
-        registry.add("spring.security.oauth2.resourceserver.jwt.issuer-uri", () -> "http://localhost:8081/realms/pfe-realm");
-        registry.add("camunda.client.grpc-address", () -> "http://localhost:26500");
+
+        // Placeholder values for external services — all disabled via application-test.properties
+        // jwt.issuer-uri is handled by application-test.properties (http://dummy/realms/mock)
+        // and overridden at runtime by TestJwtSecurityConfiguration's custom JwtDecoder
+        registry.add("alfresco.base-url", () -> "http://mock-alfresco:8080/alfresco");
+        registry.add("camunda.client.grpc-address", () -> "http://mock-camunda:26500");
     }
 }

@@ -22,8 +22,11 @@ import java.util.List;
 import java.util.Map;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.when;
+
+import tn.pi.remoteflowapplication.domain.exception.ResourceNotFoundException;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
@@ -84,9 +87,10 @@ class ApiContractIT extends BaseIntegrationIT {
     @Test
     void errorResponsesShouldHaveConsistentFormat() throws Exception {
 
-        // 🔥 CRITICAL FIX: simulate NOT FOUND behavior
-        when(queryService.findById(any(), null))
-                .thenThrow(new RuntimeException("Telework not found"));
+        // Simulate NOT FOUND: use ResourceNotFoundException (maps to 404 via GlobalExceptionHandler)
+        // Use matchers for ALL arguments — controller passes real Authentication, never null
+        when(queryService.findById(anyLong(), any()))
+                .thenThrow(new ResourceNotFoundException("Request not found"));
 
         mockMvc.perform(get("/api/telework/999999")
                 .header("Authorization",
