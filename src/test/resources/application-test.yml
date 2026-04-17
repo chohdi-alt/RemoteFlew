@@ -1,0 +1,33 @@
+spring:
+  datasource:
+    url: jdbc:mariadb://localhost:3307/pfeworkflow
+    username: root
+    password: mariadb
+
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    show-sql: false
+
+  flyway:
+    enabled: true
+
+  main:
+    lazy-initialization: true
+
+keycloak:
+  enabled: false
+
+alfresco:
+  enabled: false
+
+camunda:
+  client:
+    enabled: false
+
+zeebe:
+  client:
+    enabled: false
+
+telework:
+  max-days-per-week: 1
