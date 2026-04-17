@@ -1,4 +1,9 @@
 spring:
+  autoconfigure:
+    exclude:
+      - io.camunda.zeebe.spring.client.configuration.ZeebeClientAllAutoConfiguration
+      - io.camunda.zeebe.spring.client.configuration.ZeebeActuatorConfiguration
+
   datasource:
     url: jdbc:mariadb://localhost:3307/pfeworkflow
     username: root
@@ -7,27 +12,16 @@ spring:
   jpa:
     hibernate:
       ddl-auto: validate
-    show-sql: false
 
   flyway:
     enabled: true
 
-  main:
-    lazy-initialization: true
-
+# Disable external systems (logical flags)
 keycloak:
   enabled: false
 
 alfresco:
   enabled: false
-
-camunda:
-  client:
-    enabled: false
-
-zeebe:
-  client:
-    enabled: false
 
 telework:
   max-days-per-week: 1
