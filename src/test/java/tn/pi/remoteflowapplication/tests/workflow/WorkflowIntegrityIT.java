@@ -66,17 +66,22 @@ class WorkflowIntegrityIT extends BaseIntegrationIT {
     void shouldBlockOverlappingRequestsForSameEmployee() throws Exception {
         User employee = new User("overlap-emp", "emp2", "Employee", "emp2@test.local");
 
+        // ✅ SINGLE DAY (avoids quota rule)
         CreateTeleworkDTO dto1 = new CreateTeleworkDTO(
                 LocalDate.of(2026, 7, 1),
-                LocalDate.of(2026, 7, 2),
+                LocalDate.of(2026, 7, 1),
                 "Overlap 1");
+
         handler.handle(dto1, null, employee);
 
+        // ✅ SAME DAY → guaranteed overlap
         CreateTeleworkDTO dtoOverlap = new CreateTeleworkDTO(
-                LocalDate.of(2026, 7, 2), 
-                LocalDate.of(2026, 7, 3),
+                LocalDate.of(2026, 7, 1),
+                LocalDate.of(2026, 7, 1),
                 "Overlap 2");
-        
-        assertThrows(BusinessException.class, () -> handler.handle(dtoOverlap, null, employee));
+
+        assertThrows(BusinessException.class,
+                () -> handler.handle(dtoOverlap, null, employee),
+                "Should block overlapping requests for same employee");
     }
 }
