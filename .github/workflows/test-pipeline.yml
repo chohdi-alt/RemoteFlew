@@ -147,6 +147,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: chohdi-alt/remoteflew-frontend
+          token: ${{ secrets.FRONTEND_REPO_TOKEN }}
           path: frontend-src
       - uses: actions/setup-java@v4
         with:
