@@ -1,8 +1,5 @@
 spring:
   autoconfigure:
-    exclude:
-      - io.camunda.zeebe.spring.client.configuration.ZeebeClientAllAutoConfiguration
-      - io.camunda.zeebe.spring.client.configuration.ZeebeActuatorConfiguration
 
   datasource:
     url: jdbc:mariadb://localhost:3307/pfeworkflow
