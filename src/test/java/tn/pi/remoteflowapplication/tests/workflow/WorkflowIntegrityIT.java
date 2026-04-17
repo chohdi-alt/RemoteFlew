@@ -3,7 +3,6 @@ package tn.pi.remoteflowapplication.tests.workflow;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.transaction.annotation.Transactional;
 import tn.pi.remoteflowapplication.application.command.CreateTeleworkRequestHandler;
@@ -14,6 +13,9 @@ import tn.pi.remoteflowapplication.domain.exception.BusinessException;
 import tn.pi.remoteflowapplication.application.port.out.TeleworkRequestRepository;
 import tn.pi.remoteflowapplication.domain.state.RequestStatus;
 import tn.pi.remoteflowapplication.tests.integration.BaseIntegrationIT;
+
+// 🔥 ADD THIS (use your concrete JPA repo if needed)
+import tn.pi.remoteflowapplication.infrastructure.persistence.SpringUserJpaRepository;
 
 import java.time.LocalDate;
 
@@ -30,58 +32,83 @@ class WorkflowIntegrityIT extends BaseIntegrationIT {
     @Autowired
     private TeleworkRequestRepository repository;
 
+    // 🔥 NEW: persist users before using them
+    @Autowired
+    private SpringUserJpaRepository userRepository;
+
     @Test
     void shouldMaintainDataIntegrityUponRejection() throws Exception {
-        User employee = new User("integrity-emp", "emp", "Employee", "emp@test.local");
-        
+
+        // ✅ FIX: persist user
+        User employee = userRepository.save(
+                new User("integrity-emp", "emp", "Employee", "emp@test.local")
+        );
+
         // 1. Create a request for Monday
         CreateTeleworkDTO dto1 = new CreateTeleworkDTO(
-                LocalDate.of(2026, 6, 1), 
-                LocalDate.of(2026, 6, 1), 
-                "Quota test 1");
+                LocalDate.of(2026, 6, 1),
+                LocalDate.of(2026, 6, 1),
+                "Quota test 1"
+        );
+
         Long requestId = handler.handle(dto1, null, employee);
-        
+
         TeleworkRequest request = repository.findById(requestId).orElseThrow();
         assertEquals(RequestStatus.SUBMITTED, request.getStatus());
 
-        // 2. Try to create another request for Tuesday in the same week (Quota is 1)
+        // 2. Second request same week → should fail (quota rule)
         CreateTeleworkDTO dto2 = new CreateTeleworkDTO(
                 LocalDate.of(2026, 6, 2),
                 LocalDate.of(2026, 6, 2),
-                "Quota test 2");
-        assertThrows(BusinessException.class, () -> handler.handle(dto2, null, employee), 
-                "Should block second request due to quota");
+                "Quota test 2"
+        );
 
-        // 3. Reject the first request
+        assertThrows(BusinessException.class,
+                () -> handler.handle(dto2, null, employee),
+                "Should block second request due to quota"
+        );
+
+        // 3. Reject first request
         request.rejectByManager("Quota release test");
         repository.save(request);
 
-        // 4. Now the second request should pass because the first one is REJECTED
+        // 4. Now second request should pass
         Long newRequestId = handler.handle(dto2, null, employee);
+
         assertNotNull(newRequestId);
-        assertEquals(RequestStatus.SUBMITTED, repository.findById(newRequestId).get().getStatus());
+        assertEquals(
+                RequestStatus.SUBMITTED,
+                repository.findById(newRequestId).orElseThrow().getStatus()
+        );
     }
 
     @Test
     void shouldBlockOverlappingRequestsForSameEmployee() throws Exception {
-        User employee = new User("overlap-emp", "emp2", "Employee", "emp2@test.local");
 
-        // ✅ SINGLE DAY (avoids quota rule)
+        // ✅ FIX: persist user
+        User employee = userRepository.save(
+                new User("overlap-emp", "emp2", "Employee", "emp2@test.local")
+        );
+
+        // single day → avoids quota rule
         CreateTeleworkDTO dto1 = new CreateTeleworkDTO(
                 LocalDate.of(2026, 7, 1),
                 LocalDate.of(2026, 7, 1),
-                "Overlap 1");
+                "Overlap 1"
+        );
 
         handler.handle(dto1, null, employee);
 
-        // ✅ SAME DAY → guaranteed overlap
+        // same day → overlap
         CreateTeleworkDTO dtoOverlap = new CreateTeleworkDTO(
                 LocalDate.of(2026, 7, 1),
                 LocalDate.of(2026, 7, 1),
-                "Overlap 2");
+                "Overlap 2"
+        );
 
         assertThrows(BusinessException.class,
                 () -> handler.handle(dtoOverlap, null, employee),
-                "Should block overlapping requests for same employee");
+                "Should block overlapping requests for same employee"
+        );
     }
 }
