@@ -201,6 +201,7 @@ jobs:
         run: npm test
         env:
           BACKEND_BASE_URL: http://localhost:8080
+          FRONTEND_URL: http://localhost:4200
           SPRING_PROFILES_ACTIVE: test
           # Pointing playwright to the local frontend instance if config allows
           # Process.env.FRONTEND_URL: http://localhost:4200
