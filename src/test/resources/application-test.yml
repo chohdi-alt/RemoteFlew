@@ -35,12 +35,12 @@ alfresco:
 
 # 🔥 VERY IMPORTANT (you missed this → causes slow / unstable CI)
 zeebe:
-  enabled: false
+  client:
+    enabled: false
 
 camunda:
   client:
     enabled: false
-
 # Business rules
 telework:
   max-days-per-week: 1
