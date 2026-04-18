@@ -126,42 +126,6 @@ jobs:
         with:
           name: jacoco-integration-workflow
           path: target/jacoco.exec
-  backend-tests:
-    runs-on: ubuntu-latest
-
-    services:
-      mariadb:
-        image: mariadb:11.4
-        env:
-          MARIADB_ROOT_PASSWORD: mariadb
-          MARIADB_DATABASE: pfeworkflow
-        ports:
-          - 3307:3306
-        options: --health-cmd="mariadb-admin ping" --health-interval=10s
-          --health-timeout=5s --health-retries=3
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: "17"
-          cache: maven
-
-      - name: Run tests
-        run: ./mvnw clean verify
-        env:
-          SPRING_PROFILES_ACTIVE: test
-          SPRING_DATASOURCE_URL: jdbc:mariadb://localhost:3307/pfeworkflow
-          SPRING_DATASOURCE_USERNAME: root
-          SPRING_DATASOURCE_PASSWORD: mariadb
-
-          # 🔴 hard-disable external systems (CI-safe)
-          ZEEBE_CLIENT_ENABLED: false
-          CAMUNDA_CLIENT_ENABLED: false
-          KEYCLOAK_ENABLED: false
-          ALFRESCO_ENABLED: false
 
   e2e:
     name: Self-Contained E2E (Playwright)
@@ -177,6 +141,15 @@ jobs:
           - 3307:3306
         options: --health-cmd="mariadb-admin ping" --health-interval=10s
           --health-timeout=5s --health-retries=3
+
+      zeebe:
+        image: camunda/zeebe:8.5.0
+        ports:
+          - 26500:26500
+          - 9600:9600
+        options: >-
+          --health-cmd="curl -f http://localhost:9600/actuator/health || exit 1"
+          --health-interval=10s --health-timeout=5s --health-retries=10
     steps:
       - name: Checkout Backend
         uses: actions/checkout@v4
@@ -202,11 +175,18 @@ jobs:
 
       - name: Start Backend in Background
         run: |
+          echo "Waiting for Zeebe..."
+          timeout 60s bash -c 'until nc -z localhost 26500; do sleep 2; done'
+
+
           java -jar target/RemoteFlowApplication-0.0.1-SNAPSHOT.jar \
             --server.port=8080 \
             --spring.profiles.active=test \
+            --zeebe.client.broker.gateway-address=localhost:26500 \
+            --zeebe.client.security.plaintext=true \
             > backend.log 2>&1 &
 
+            
           echo "Waiting for backend..."
           timeout 60s bash -c 'until curl -s http://localhost:8080/actuator/health | grep "status":"UP"; do sleep 2; done' || (cat backend.log && exit 1)
         env:
@@ -223,7 +203,7 @@ jobs:
 
       - name: Serve Frontend
         run: |
-          npx http-server frontend-dist/remote-flow-app/browser -s 4200 &
+          npx http-server frontend-dist/remote-flow-app/browser -p 4200 -s &
           echo "Waiting for frontend to be ready..."
           timeout 30s bash -c 'until curl -s http://localhost:4200 | grep "<html"; do sleep 1; done'
 
