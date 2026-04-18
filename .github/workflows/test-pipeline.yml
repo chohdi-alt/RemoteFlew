@@ -144,36 +144,8 @@ jobs:
           --health-interval=10s --health-timeout=5s --health-retries=10
           --health-start-period=20s
 
-      zeebe:
-        image: camunda/zeebe:8.5.0
-        ports:
-          - 26500:26500
-          - 9600:9600
-        env:
-          ZEEBE_BROKER_GATEWAY_ENABLE: true
-          ZEEBE_BROKER_GATEWAY_NETWORK_HOST: 0.0.0.0
-          ZEEBE_BROKER_GATEWAY_NETWORK_PORT: 26500
-
-          ZEEBE_INSECURE_CONNECTION: true
-
-          ZEEBE_BROKER_EXPORTERS_ELASTICSEARCH_CLASSNAME: io.camunda.zeebe.exporter.ElasticsearchExporter
-          ZEEBE_BROKER_EXPORTERS_ELASTICSEARCH_ARGS_URL: http://elasticsearch:9200
-
-      elasticsearch:
-        image: docker.elastic.co/elasticsearch/elasticsearch:7.17.22
-        ports:
-          - 9200:9200
-        env:
-          discovery.type: single-node
-          xpack.security.enabled: false
-          ES_JAVA_OPTS: -Xms512m -Xmx512m
     steps:
-      - name: Wait for Zeebe
-        run: |
-          timeout 90s bash -c '
-          until nc -z localhost 26500; do sleep 2; done
-          until curl -s http://localhost:9600/actuator/health | grep "UP"; do sleep 3; done
-          '
+
       - name: Checkout Backend
         uses: actions/checkout@v4
       - name: Checkout Frontend
@@ -198,26 +170,18 @@ jobs:
 
       - name: Start Backend in Background
         run: |
-          echo "Waiting for Elasticsearch..."
-          timeout 160s bash -c 'until curl -s http://localhost:9200 > /dev/null; do sleep 2; done'
-          echo "Waiting for Zeebe..."
-          timeout 160s bash -c 'until nc -z localhost 26500; do sleep 2; done'
-
-
           java -jar target/RemoteFlowApplication-0.0.1-SNAPSHOT.jar \
             --server.port=8080 \
             --spring.profiles.active=test \
-            --zeebe.client.broker.gateway-address=localhost:26500 \
-            --zeebe.client.security.plaintext=true \
             > backend.log 2>&1 &
 
             
           echo "Waiting for backend..."
           timeout 160s bash -c '
-          until curl -s http://localhost:8080/actuator/health | grep -E "UP|DOWN"; do
+          until curl -s http://localhost:8080/actuator/health | grep UP; do
             sleep 3
           done
-          ' || (echo "Backend failed:" && cat backend.log && exit 1)    
+          ' || (echo "Backend failed:" && cat backend.log && exit 1)
         env:
           SPRING_DATASOURCE_URL: jdbc:mariadb://localhost:3307/pfeworkflow
           SPRING_DATASOURCE_USERNAME: root
