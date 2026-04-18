@@ -151,6 +151,12 @@ jobs:
           --health-cmd="curl -f http://localhost:9600/actuator/health || exit 1"
           --health-interval=10s --health-timeout=5s --health-retries=10
     steps:
+      - name: Wait for Zeebe
+        run: |
+          timeout 90s bash -c '
+          until nc -z localhost 26500; do sleep 2; done
+          until curl -s http://localhost:9600/actuator/health | grep "UP"; do sleep 3; done
+          '
       - name: Checkout Backend
         uses: actions/checkout@v4
       - name: Checkout Frontend
