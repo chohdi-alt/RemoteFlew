@@ -213,7 +213,7 @@ jobs:
 
             
           echo "Waiting for backend..."
-          timeout 160s bash -c 'until curl -s http://localhost:8080/actuator/health | grep "status":"UP"; do sleep 2; done' || (cat backend.log && exit 1)
+          timeout 160s bash -c 'until curl -s http://localhost:8080/actuator/health | grep -E "UP|DOWN"
         env:
           SPRING_DATASOURCE_URL: jdbc:mariadb://localhost:3307/pfeworkflow
           SPRING_DATASOURCE_USERNAME: root

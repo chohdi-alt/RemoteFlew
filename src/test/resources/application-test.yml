@@ -21,7 +21,7 @@ management:
   endpoints:
     web:
       exposure:
-        include: health
+        include: health,info
   endpoint:
     health:
       show-details: always
@@ -36,7 +36,8 @@ alfresco:
 # 🔥 VERY IMPORTANT (you missed this → causes slow / unstable CI)
 zeebe:
   client:
-    enabled: false
+    security:
+      plaintext: true
 
 camunda:
   client:
