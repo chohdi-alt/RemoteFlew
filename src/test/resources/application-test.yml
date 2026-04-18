@@ -1,24 +1,46 @@
 spring:
-  autoconfigure:
-
   datasource:
     url: jdbc:mariadb://localhost:3307/pfeworkflow
     username: root
     password: mariadb
+    driver-class-name: org.mariadb.jdbc.Driver
 
   jpa:
     hibernate:
       ddl-auto: validate
+    open-in-view: false
 
   flyway:
     enabled: true
 
-# Disable external systems (logical flags)
+  main:
+    allow-bean-definition-overriding: true
+
+# ✅ Actuator (FIXES your CI health check)
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+  endpoint:
+    health:
+      show-details: always
+
+# ✅ Disable ALL external dependencies (CRITICAL for CI stability)
 keycloak:
   enabled: false
 
 alfresco:
   enabled: false
 
+# 🔥 VERY IMPORTANT (you missed this → causes slow / unstable CI)
+zeebe:
+  enabled: false
+
+camunda:
+  client:
+    enabled: false
+
+# Business rules
 telework:
   max-days-per-week: 1
