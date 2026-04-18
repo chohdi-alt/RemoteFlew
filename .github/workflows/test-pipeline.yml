@@ -199,9 +199,9 @@ jobs:
       - name: Start Backend in Background
         run: |
           echo "Waiting for Elasticsearch..."
-          timeout 60s bash -c 'until curl -s http://elasticsearch:9200 > /dev/null; do sleep 2; done'
+          timeout 160s bash -c 'until curl -s http://localhost:9200 > /dev/null; do sleep 2; done'
           echo "Waiting for Zeebe..."
-          timeout 60s bash -c 'until nc -z localhost 26500; do sleep 2; done'
+          timeout 160s bash -c 'until nc -z localhost 26500; do sleep 2; done'
 
 
           java -jar target/RemoteFlowApplication-0.0.1-SNAPSHOT.jar \
@@ -213,7 +213,7 @@ jobs:
 
             
           echo "Waiting for backend..."
-          timeout 60s bash -c 'until curl -s http://localhost:8080/actuator/health | grep "status":"UP"; do sleep 2; done' || (cat backend.log && exit 1)
+          timeout 160s bash -c 'until curl -s http://localhost:8080/actuator/health | grep "status":"UP"; do sleep 2; done' || (cat backend.log && exit 1)
         env:
           SPRING_DATASOURCE_URL: jdbc:mariadb://localhost:3307/pfeworkflow
           SPRING_DATASOURCE_USERNAME: root
