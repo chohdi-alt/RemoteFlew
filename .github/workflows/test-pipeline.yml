@@ -175,12 +175,6 @@ jobs:
             --spring.profiles.active=test \
             --camunda.client.enabled=false \
             --management.health.zeebe.enabled=false \
-            --camunda.client.zeebe.enabled=false \
-            --camunda.client.tasklist.enabled=false \
-            --camunda.client.operate.enabled=false \
-            --camunda.client.optimize.enabled=false \
-            --camunda.client.identity.enabled=false \
-            --zeebe.client.enabled=false \
             > backend.log 2>&1 &
 
             
