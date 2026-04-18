@@ -155,10 +155,11 @@ jobs:
           ZEEBE_INSECURE_CONNECTION: true
 
           ZEEBE_BROKER_EXPORTERS_ELASTICSEARCH_CLASSNAME: io.camunda.zeebe.exporter.ElasticsearchExporter
-          ZEEBE_BROKER_EXPORTERS_ELASTICSEARCH_ARGS_URL: http://localhost:9200
+          ZEEBE_BROKER_EXPORTERS_ELASTICSEARCH_ARGS_URL: http://elasticsearch:9200
         options: >-
-          --health-cmd="curl -f http://localhost:9600/actuator/health || exit 1"
-          --health-interval=10s --health-timeout=5s --health-retries=10
+          --health-cmd="curl -s http://localhost:9600/actuator/health | grep UP
+          || exit 1" --health-interval=10s --health-timeout=5s
+          --health-retries=20
       elasticsearch:
         image: docker.elastic.co/elasticsearch/elasticsearch:7.17.22
         ports:
@@ -199,7 +200,7 @@ jobs:
       - name: Start Backend in Background
         run: |
           echo "Waiting for Elasticsearch..."
-          timeout 60s bash -c 'until curl -s http://localhost:9200 > /dev/null; do sleep 2; done'
+          timeout 60s bash -c 'until curl -s http://elasticsearch:9200 > /dev/null; do sleep 2; done'
           echo "Waiting for Zeebe..."
           timeout 60s bash -c 'until nc -z localhost 26500; do sleep 2; done'
 
