@@ -36,12 +36,23 @@ alfresco:
 # 🔥 VERY IMPORTANT (you missed this → causes slow / unstable CI)
 zeebe:
   client:
+    broker:
+      gateway-address: localhost:26500
     security:
       plaintext: true
 
 camunda:
   client:
-    enabled: false
+    zeebe:
+      enabled: true # or false if not needed
+    operate:
+      enabled: false
+    tasklist:
+      enabled: false # 🔥 THIS was breaking your startup
+    optimize:
+      enabled: false
+    identity:
+      enabled: false
 # Business rules
 telework:
   max-days-per-week: 1
