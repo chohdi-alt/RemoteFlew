@@ -25,6 +25,8 @@ management:
   endpoint:
     health:
       show-details: always
+      zeebe:
+        enabled: false
 
 # ✅ Disable ALL external dependencies (CRITICAL for CI stability)
 keycloak:
