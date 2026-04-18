@@ -35,6 +35,7 @@ alfresco:
 
 camunda:
   client:
+    enabled: false
     zeebe:
       enabled: false
     operate:
@@ -45,6 +46,14 @@ camunda:
       enabled: false
     identity:
       enabled: false
+
+zeebe:
+  client:
+    enabled: false
+
+logging:
+  level:
+    org.springframework.core.env: DEBUG
 # Business rules
 telework:
   max-days-per-week: 1

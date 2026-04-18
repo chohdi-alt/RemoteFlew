@@ -173,6 +173,13 @@ jobs:
           java -jar target/RemoteFlowApplication-0.0.1-SNAPSHOT.jar \
             --server.port=8080 \
             --spring.profiles.active=test \
+            --camunda.client.enabled=false \
+            --camunda.client.zeebe.enabled=false \
+            --camunda.client.tasklist.enabled=false \
+            --camunda.client.operate.enabled=false \
+            --camunda.client.optimize.enabled=false \
+            --camunda.client.identity.enabled=false \
+            --zeebe.client.enabled=false \
             > backend.log 2>&1 &
 
             
