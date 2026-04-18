@@ -5,6 +5,7 @@ import io.camunda.zeebe.client.api.response.ProcessInstanceEvent;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.context.annotation.Primary;
 import org.springframework.stereotype.Service;
 import tn.pi.remoteflowapplication.application.port.out.WorkflowOrchestrationPort;
 import tn.pi.remoteflowapplication.domain.exception.WorkflowExecutionException;
@@ -14,8 +15,13 @@ import java.util.Map;
 import java.util.concurrent.TimeUnit;
 
 @Service
-@ConditionalOnProperty(name = "camunda.enabled", havingValue = "true", matchIfMissing = true)
-public class CamundaWorkflowService implements WorkflowOrchestrationPort {
+@Primary
+@ConditionalOnProperty(
+    value = "camunda.client.zeebe.enabled",
+    havingValue = "true",
+    matchIfMissing = true
+)
+public class CamundaWorkflowService implements WorkflowOrchestrationPort, WorkflowService {
 
     private static final Logger logger = LoggerFactory.getLogger(CamundaWorkflowService.class);
     private static final String TELEWORK_PROCESS_ID = "telework_process";
