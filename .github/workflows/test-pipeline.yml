@@ -177,8 +177,15 @@ jobs:
         with:
           distribution: temurin
           java-version: "17"
+          cache: maven
       - name: Fix mvnw permission
         run: chmod +x mvnw
+
+      - name: Download coverage
+        uses: actions/download-artifact@v4
+        with:
+          name: full-coverage-report
+          path: target/site/jacoco
 
       - name: Sonar Scan (Backend)
         run: |
