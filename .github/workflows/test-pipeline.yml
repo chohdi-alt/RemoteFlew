@@ -168,7 +168,7 @@ jobs:
   sonar:
     name: SonarCloud Analysis
     runs-on: ubuntu-latest
-    needs: [ backend-tests, frontend-tests, coverage-report ]
+    needs: [ backend-tests, frontend-tests ]
 
     steps:
       - uses: actions/checkout@v4
@@ -180,12 +180,6 @@ jobs:
           cache: maven
       - name: Fix mvnw permission
         run: chmod +x mvnw
-
-      - name: Download coverage
-        uses: actions/download-artifact@v4
-        with:
-          name: full-coverage-report
-          path: target/site/jacoco
 
       - name: Sonar Scan (Backend)
         run: |
@@ -215,7 +209,7 @@ jobs:
 
       - name: Sonar Scan (Frontend)
         working-directory: frontend
-        run: npx sonar-scanner \ -Dsonar.login=${{ secrets.SONAR_TOKEN }}
+        run: npx sonar-scanner \ -Dsonar.login=${{ secrets.SONAR }}
 
   coverage-report:
     name: Coverage Aggregation
