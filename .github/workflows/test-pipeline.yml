@@ -149,7 +149,8 @@ jobs:
           distribution: temurin
           java-version: "17"
           cache: maven
-
+      - name: Fix mvnw permission
+        run: chmod +x mvnw
       - name: Run tests
         run: ./mvnw clean verify
         env:
