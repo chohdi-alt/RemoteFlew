@@ -183,7 +183,7 @@ jobs:
 
       - name: Sonar Scan (Backend)
         run: |
-          ./mvnw sonar:sonar \
+          ./mvnw verify sonar:sonar \
             -Dsonar.projectKey=chohdi-alt_RemoteFlew \
             -Dsonar.organization=chohdi-alt \
             -Dsonar.host.url=https://sonarcloud.io \
