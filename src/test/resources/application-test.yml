@@ -25,33 +25,6 @@ management:
   endpoint:
     health:
       show-details: always
-      zeebe:
-        enabled: false
-
-# ✅ Disable ALL external dependencies (CRITICAL for CI stability)
-keycloak:
-  enabled: false
-
-alfresco:
-  enabled: false
-
-camunda:
-  client:
-    enabled: false
-    zeebe:
-      enabled: false
-    operate:
-      enabled: false
-    tasklist:
-      enabled: false
-    optimize:
-      enabled: false
-    identity:
-      enabled: false
-
-zeebe:
-  client:
-    enabled: false
 
 logging:
   level:
