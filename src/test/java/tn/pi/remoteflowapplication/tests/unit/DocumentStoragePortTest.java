@@ -1,4 +1,4 @@
-package tn.pi.remoteflowapplication.tests.integration;
+package tn.pi.remoteflowapplication.tests.unit;
 
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -7,6 +7,7 @@ import org.springframework.http.MediaType;
 import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.test.context.ActiveProfiles;
 import tn.pi.remoteflowapplication.application.port.out.DocumentStoragePort;
+import tn.pi.remoteflowapplication.tests.integration.BaseIntegrationIT;
 
 import java.nio.charset.StandardCharsets;
 

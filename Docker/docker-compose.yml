@@ -1,0 +1,89 @@
+
+
+services:
+
+
+
+
+
+
+  backend:
+    build:
+      context: ..
+      dockerfile: Docker/Dockerfile
+    container_name: backend
+
+    environment:
+      SPRING_PROFILES_ACTIVE: docker
+
+      # KEYCLOAK CREDENTIALS (Match Keycloak Realm settings)
+      KEYCLOAK_ADMIN: admin
+      KEYCLOAK_ADMIN_PASSWORD: admin
+
+      # 🔥 Zeebe override
+      ZEEBE_GRPC: http://zeebe:26500
+      ZEEBE_REST: http://zeebe:8080
+
+      # 🔥 CRITICAL FIX (from your logs)
+      CAMUNDA_CLIENT_ENABLED: true
+      CAMUNDA_CLIENT_ZEEBE_ENABLED: true
+
+      SPRING_DATASOURCE_URL: jdbc:mariadb://mariadb-test:3306/pfeworkflow
+      SPRING_DATASOURCE_USERNAME: root
+      SPRING_DATASOURCE_PASSWORD: mariadb
+
+      # ===== ZEEBE =====
+      ZEEBE_CLIENT_BROKER_GATEWAY_ADDRESS: zeebe:26500
+      ZEEBE_CLIENT_SECURITY_PLAINTEXT: "true"
+
+      # ===== ELASTIC (Camunda exporter/operate) =====
+      ELASTICSEARCH_URL: http://elasticsearch:9200
+
+      # ===== ALFRESCO (repo container name) =====
+      ALFRESCO_BASE_URL: http://alfresco:8080
+
+      # ===== KEYCLOAK (adjust if your container name differs) =====
+      KEYCLOAK_AUTH_SERVER_URL: http://keycloak:8080
+
+      # JMS (Spring Boot ActiveMQ)
+      SPRING_ACTIVEMQ_BROKER_URL: tcp://activemq:61616
+      SPRING_ACTIVEMQ_USER: admin
+      SPRING_ACTIVEMQ_PASSWORD: admin
+
+      # STOMP (WebSocket)
+      SPRING_STOMP_HOST: activemq
+      SPRING_STOMP_PORT: 61613
+
+
+    ports:
+      - "8088:8088"
+    networks:
+      - app-net
+      - camunda-net
+      - alfresco-net
+
+
+  frontend:   # ✅ NOW CORRECT (same level as backend)
+    build:
+      context: ../../RemoteFlowApp   # ⚠️ FIXED PATH (important)
+      dockerfile: Dockerfile
+    container_name: frontend
+    ports:
+      - "4200:80"
+    depends_on:
+      - backend
+    networks:
+      - app-net
+
+
+networks:
+  app-net:
+    driver: bridge
+
+  camunda-net:
+    external: true
+    name: camunda-platform
+
+  alfresco-net:
+    external: true
+    name: docker-compose_default

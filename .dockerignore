@@ -1,0 +1,17 @@
+# Ignore everything by default, then allow only build-required files.
+*
+
+# Maven project descriptor and wrapper
+!pom.xml
+!mvnw
+!mvnw.cmd
+!.mvn/
+!.mvn/**
+
+# Application source (includes src/main/resources)
+!src/
+!src/**
+
+# Docker definitions used for image build
+!Docker/Dockerfile
+

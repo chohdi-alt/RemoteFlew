@@ -1,0 +1,103 @@
+{
+  "realm": "pfe-realm",
+  "enabled": true,
+  "sslRequired": "none",
+  "registrationAllowed": false,
+  "loginWithEmailAllowed": true,
+  "duplicateEmailsAllowed": false,
+  "bruteForceProtected": true,
+  "failureFactor": 5,
+  "waitIncrementSeconds": 60,
+  "quickLoginCheckMilliSeconds": 1000,
+  "minimumQuickLoginWaitSeconds": 60,
+  "maxFailureWaitSeconds": 300,
+  "maxDeltaTimeSeconds": 900,
+  "permanentLockout": false,
+  "accessTokenLifespan": 300,
+  "refreshTokenMaxReuse": 0,
+  "revokeRefreshToken": false,
+
+  "roles": {
+    "realm": [
+      { "name": "EMPLOYEE",    "composite": false },
+      { "name": "MANAGER",     "composite": false },
+      { "name": "HR_MANAGER",  "composite": false },
+      { "name": "ADMIN",       "composite": false }
+    ]
+  },
+
+  "clients": [
+    {
+      "clientId": "PfeClient",
+      "name": "PfeClient",
+      "enabled": true,
+      "publicClient": false,
+      "secret": "cC9ZnTaGLwG6OCs5xKnRaxQNFzyYCEwT",
+      "protocol": "openid-connect",
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": true,
+      "serviceAccountsEnabled": true,
+      "implicitFlowEnabled": false,
+      "redirectUris": ["*"],
+      "webOrigins": ["*"],
+      "attributes": {
+        "access.token.lifespan": "300"
+      }
+    }
+  ],
+
+  "users": [
+    {
+      "username": "employee_test",
+      "email": "employee@test.local",
+      "firstName": "Test",
+      "lastName": "Employee",
+      "enabled": true,
+      "emailVerified": true,
+      "requiredActions": [],
+      "credentials": [
+        { "type": "password", "value": "Test1234!", "temporary": false }
+      ],
+      "realmRoles": ["EMPLOYEE"]
+    },
+    {
+      "username": "manager_test",
+      "email": "manager@test.local",
+      "firstName": "Test",
+      "lastName": "Manager",
+      "enabled": true,
+      "emailVerified": true,
+      "requiredActions": [],
+      "credentials": [
+        { "type": "password", "value": "Test1234!", "temporary": false }
+      ],
+      "realmRoles": ["MANAGER"]
+    },
+    {
+      "username": "hr_test",
+      "email": "hr@test.local",
+      "firstName": "Test",
+      "lastName": "HR",
+      "enabled": true,
+      "emailVerified": true,
+      "requiredActions": [],
+      "credentials": [
+        { "type": "password", "value": "Test1234!", "temporary": false }
+      ],
+      "realmRoles": ["HR_MANAGER"]
+    },
+    {
+      "username": "admin_test",
+      "email": "admin@test.local",
+      "firstName": "Test",
+      "lastName": "Admin",
+      "enabled": true,
+      "emailVerified": true,
+      "requiredActions": [],
+      "credentials": [
+        { "type": "password", "value": "Test1234!", "temporary": false }
+      ],
+      "realmRoles": ["ADMIN"]
+    }
+  ]
+}

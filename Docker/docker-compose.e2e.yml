@@ -1,0 +1,178 @@
+# ================================================================
+# docker-compose.e2e.yml — Self-contained E2E environment
+# ================================================================
+# Rules:
+#   - Zero external networks (CB-2 fix)
+#   - Every service has an explicit health check (HR-8 fix)
+#   - depends_on uses condition: service_healthy (prevents race conditions)
+#   - Container names prefixed with e2e- to avoid collisions with local stacks
+#   - Run from project root: docker compose -f Docker/docker-compose.e2e.yml up
+# ================================================================
+
+services:
+
+  # ──────────────────────────────────────────────────────────────
+  # 1. DATABASE
+  # ──────────────────────────────────────────────────────────────
+  e2e-mariadb:
+    image: mariadb:11.4
+    container_name: e2e-mariadb
+    environment:
+      MARIADB_ROOT_PASSWORD: mariadb
+      MARIADB_DATABASE: pfeworkflow
+    ports:
+      - "3310:3306"       # non-standard host port avoids conflict with local MariaDB
+    volumes:
+      - e2e-mariadb-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mariadb-admin", "ping", "-h", "localhost", "-u", "root", "-pmariadb"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 30s
+    networks:
+      - e2e-net
+
+  # ──────────────────────────────────────────────────────────────
+  # 2. KEYCLOAK (with automatic realm import)
+  # ──────────────────────────────────────────────────────────────
+  e2e-keycloak:
+    image: quay.io/keycloak/keycloak:24.0.3
+    container_name: e2e-keycloak
+    command: start-dev --import-realm
+    environment:
+      KEYCLOAK_ADMIN: admin
+      KEYCLOAK_ADMIN_PASSWORD: admin
+      KC_HTTP_ENABLED: "true"
+      KC_HOSTNAME_STRICT: "false"
+      KC_HOSTNAME_STRICT_HTTPS: "false"
+      KC_LOG_LEVEL: WARN
+    volumes:
+      # The realm file is imported automatically on first start via --import-realm.
+      # Subsequent starts skip import if the realm already exists.
+      - ../keycloak/pfe-realm-export.json:/opt/keycloak/data/import/pfe-realm-export.json:ro
+    ports:
+      - "8081:8080"       # non-standard host port avoids conflict with local Keycloak
+    healthcheck:
+      # Health check verifies that pfe-realm is fully initialized, not just that
+      # Keycloak is running. The OIDC discovery endpoint only responds 200 once the
+      # realm import has completed and the realm is live.
+      test: ["CMD-SHELL", "curl -sf http://localhost:8080/realms/pfe-realm/.well-known/openid-configuration > /dev/null || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 12
+      start_period: 60s
+    networks:
+      - e2e-net
+
+  # ──────────────────────────────────────────────────────────────
+  # 3. ACTIVEMQ (STOMP WebSocket relay)
+  # ──────────────────────────────────────────────────────────────
+  e2e-activemq:
+    image: apache/activemq-classic:5.18.3
+    container_name: e2e-activemq
+    ports:
+      - "61616:61616"     # JMS
+      - "61613:61613"     # STOMP
+      - "8161:8161"       # admin console
+    healthcheck:
+      # Admin console returns 200 when broker is fully started.
+      test: ["CMD-SHELL", "curl -sf http://localhost:8161/admin/ -u admin:admin > /dev/null || exit 1"]
+      interval: 10s
+      timeout: 8s
+      retries: 8
+      start_period: 30s
+    networks:
+      - e2e-net
+
+  # ──────────────────────────────────────────────────────────────
+  # 4. BACKEND
+  # ──────────────────────────────────────────────────────────────
+  e2e-backend:
+    build:
+      context: ..
+      dockerfile: Docker/Dockerfile
+    image: remoteflow-backend:e2e
+    container_name: e2e-backend
+    environment:
+      SPRING_PROFILES_ACTIVE: e2e
+
+      # Datasource — override application-e2e.properties defaults with
+      # the actual container hostname
+      SPRING_DATASOURCE_URL: jdbc:mariadb://e2e-mariadb:3306/pfeworkflow
+      SPRING_DATASOURCE_USERNAME: root
+      SPRING_DATASOURCE_PASSWORD: mariadb
+
+      # Keycloak
+      KEYCLOAK_AUTH_SERVER_URL: http://e2e-keycloak:8080
+      KEYCLOAK_ADMIN_SERVER_URL: http://e2e-keycloak:8080
+      KEYCLOAK_CLIENT_SECRET: ${KEYCLOAK_CLIENT_SECRET:-cC9ZnTaGLwG6OCs5xKnRaxQNFzyYCEwT}
+      KEYCLOAK_ADMIN_PASSWORD: admin
+
+      # JWT (jwk-set-uri only — no issuer-uri to avoid eager fetch race condition)
+      SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_JWK_SET_URI: http://e2e-keycloak:8080/realms/pfe-realm/protocol/openid-connect/certs
+
+      # WebSocket relay
+      REMOTEFLOW_WEBSOCKET_RELAY_HOST: e2e-activemq
+      REMOTEFLOW_WEBSOCKET_RELAY_PORT: "61613"
+
+    ports:
+      - "8088:8088"
+    depends_on:
+      e2e-mariadb:
+        condition: service_healthy
+      e2e-keycloak:
+        condition: service_healthy
+      e2e-activemq:
+        condition: service_healthy
+    healthcheck:
+      # Actuator health endpoint — returns UP only after Flyway migrations,
+      # Keycloak user sync, and all ApplicationRunner beans complete.
+      test: ["CMD-SHELL", "curl -sf http://localhost:8088/actuator/health | grep -q '\"status\":\"UP\"' || exit 1"]
+      interval: 10s
+      timeout: 8s
+      retries: 15
+      start_period: 90s
+    networks:
+      - e2e-net
+
+  # ──────────────────────────────────────────────────────────────
+  # 5. FRONTEND
+  # ──────────────────────────────────────────────────────────────
+  e2e-frontend:
+    build:
+      # Path is relative to this compose file's location (Docker/).
+      # ../RemoteFlowApp = project-root/RemoteFlowApp
+      # In CI the frontend repo is checked out to $GITHUB_WORKSPACE/RemoteFlowApp.
+      context: ../RemoteFlowApp
+      dockerfile: dockerfile
+    image: remoteflow-frontend:e2e
+    container_name: e2e-frontend
+    ports:
+      - "4200:80"
+    depends_on:
+      e2e-backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:80/ > /dev/null || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    networks:
+      - e2e-net
+
+# ──────────────────────────────────────────────────────────────
+# NETWORKS — fully internal, zero external dependencies (CB-2 fix)
+# ──────────────────────────────────────────────────────────────
+networks:
+  e2e-net:
+    driver: bridge
+    name: remoteflow-e2e-net
+
+# ──────────────────────────────────────────────────────────────
+# VOLUMES
+# ──────────────────────────────────────────────────────────────
+volumes:
+  e2e-mariadb-data:
+    driver: local
