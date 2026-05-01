@@ -67,27 +67,6 @@ jobs:
           npm ci
           npm run e2e
 
-      - name: Dump container logs on failure
-        if: failure()
-        run: |
-          echo "========== DOCKER STATUS =========="
-          docker ps -a
-
-          echo "========== BACKEND LOGS =========="
-          docker logs e2e-backend || true
-
-          echo "========== KEYCLOAK LOGS =========="
-          docker logs e2e-keycloak || true
-
-          echo "========== MARIADB LOGS =========="
-          docker logs e2e-mariadb || true
-
-          echo "========== ACTIVEMQ LOGS =========="
-          docker logs e2e-activemq || true
-
-          echo "========== FRONTEND LOGS =========="
-          docker logs e2e-frontend || true
-
       # 🔥 Cleanup
       - name: Shutdown
         if: always()
