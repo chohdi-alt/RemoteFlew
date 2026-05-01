@@ -13,22 +13,26 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # 🔥 Build Docker images (CRITICAL — your audit flagged this missing)
-      - name: Build backend image
-        run: docker build -t backend-test ./backend
+      - name: Checkout Frontend
+        uses: actions/checkout@v4
+        with:
+          repository: chohdi-alt/remoteflew-frontend
+          path: RemoteFlowApp
+          token: ${{ secrets.FRONTEND_REPO_TOKEN }}
 
-      - name: Build frontend image
-        run: docker build -t frontend-test ./frontend
+      # 🔥 Build Docker images via Compose (ensures correct context and tags)
+      - name: Build images
+        run: docker compose -f Docker/docker-compose.e2e.yml build
 
       # 🔥 Start full stack
       - name: Start stack
-        run: docker compose -f docker-compose.e2e.yml up -d
+        run: docker compose -f Docker/docker-compose.e2e.yml up -d
 
       # 🔥 Wait for MariaDB
       - name: Wait DB
         run: |
           for i in {1..20}; do
-            nc -z localhost 3307 && break
+            nc -z localhost 3310 && break
             sleep 3
           done
 
@@ -63,11 +67,11 @@ jobs:
 
       - name: Run E2E
         run: |
-          cd frontend
+          cd RemoteFlowApp
           npm ci
           npm run e2e
 
       # 🔥 Cleanup
       - name: Shutdown
         if: always()
-        run: docker compose -f docker-compose.e2e.yml down
+        run: docker compose -f Docker/docker-compose.e2e.yml down
