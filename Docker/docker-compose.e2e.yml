@@ -64,11 +64,11 @@ services:
       - "61613:61613"
       - "8161:8161"
     healthcheck:
-      test: ["CMD-SHELL", "exec 3<>/dev/tcp/localhost/61616 || exit 1"]
+      test: ["CMD-SHELL", "timeout 1 bash -c '</dev/tcp/localhost/61616' || exit 1"]
       interval: 10s
       timeout: 5s
-      retries: 8
-      start_period: 30s
+      retries: 10
+      start_period: 40s
     networks:
       - e2e-net
 
