@@ -108,8 +108,7 @@ services:
       e2e-activemq:
         condition: service_healthy
     healthcheck:
-      test: ["CMD-SHELL", "exec 3<>/dev/tcp/localhost/8088 || exit 1"]
-      interval: 10s
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8088/actuator/health"]
       timeout: 5s
       retries: 15
       start_period: 60s
