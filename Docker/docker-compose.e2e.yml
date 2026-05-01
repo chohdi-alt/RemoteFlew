@@ -64,7 +64,7 @@ services:
       - "61613:61613"
       - "8161:8161"
     healthcheck:
-      test: ["CMD-SHELL", "exec 3<>/dev/tcp/localhost/8161 || exit 1"]
+      test: ["CMD-SHELL", "exec 3<>/dev/tcp/localhost/61616 || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 8
