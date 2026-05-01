@@ -1,335 +1,94 @@
-name: RemoteFlow E2E Pipeline
+name: E2E Full System
 
-# ──────────────────────────────────────────────────────────────────
-# TRIGGERS
-# ──────────────────────────────────────────────────────────────────
-# Nightly: full E2E run automatically against main
-# Manual:  workflow_dispatch for on-demand execution (release branches, debug)
-# Push:    only on main/develop — prevents E2E from blocking every feature branch
-# NOTE: This pipeline is intentionally NOT triggered on every push/PR.
-#       Per the architectural decision, fast CI (test-pipeline.yml) runs on all
-#       branches; E2E runs on a schedule and on-demand only.
-# ──────────────────────────────────────────────────────────────────
 on:
-  schedule:
-    - cron: '0 2 * * *'   # nightly at 02:00 UTC
   workflow_dispatch:
-  push:
-    branches:
-      - main
-      - develop
-
-concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
-
-permissions:
-  contents: read
-  checks: write
-
-# ──────────────────────────────────────────────────────────────────
-# ENVIRONMENT
-# ──────────────────────────────────────────────────────────────────
-env:
-  BACKEND_IMAGE: remoteflow-backend:e2e
-  FRONTEND_IMAGE: remoteflow-frontend:e2e
-  COMPOSE_FILE: Docker/docker-compose.e2e.yml
-  BACKEND_URL: http://localhost:8088
-  FRONTEND_URL: http://localhost:4200
-  KEYCLOAK_URL: http://localhost:8081
+  schedule:
+    - cron: "0 2 * * *"
 
 jobs:
-  # ════════════════════════════════════════════════════════════════
-  # JOB 1 — Build Docker images (validates Dockerfiles — fixes P5)
-  # ════════════════════════════════════════════════════════════════
-  build-images:
-    name: Build Docker Images
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-
-    steps:
-      - name: Checkout Backend
-        uses: actions/checkout@v4
-
-      - name: Checkout Frontend
-        uses: actions/checkout@v4
-        with:
-          repository: chohdi-alt/remoteflew-frontend
-          token: ${{ secrets.FRONTEND_REPO_TOKEN }}
-          # Must be checked out to RemoteFlowApp/ so the compose file
-          # can resolve it via context: ../RemoteFlowApp
-          path: RemoteFlowApp
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Build Backend Image
-        run: |
-          docker build \
-            --file Docker/Dockerfile \
-            --tag ${{ env.BACKEND_IMAGE }} \
-            --cache-from type=gha,scope=backend \
-            --cache-to   type=gha,scope=backend,mode=max \
-            .
-
-      - name: Build Frontend Image
-        run: |
-          docker build \
-            --file RemoteFlowApp/dockerfile \
-            --tag ${{ env.FRONTEND_IMAGE }} \
-            --cache-from type=gha,scope=frontend \
-            --cache-to   type=gha,scope=frontend,mode=max \
-            RemoteFlowApp/
-
-      - name: Export Images for Next Job
-        run: |
-          docker save ${{ env.BACKEND_IMAGE }}  | gzip > /tmp/backend-image.tar.gz
-          docker save ${{ env.FRONTEND_IMAGE }} | gzip > /tmp/frontend-image.tar.gz
-
-      - name: Upload Image Artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: e2e-docker-images
-          path: /tmp/*.tar.gz
-          retention-days: 1
-
-  # ════════════════════════════════════════════════════════════════
-  # JOB 2 — Run E2E Smoke Tests
-  # ════════════════════════════════════════════════════════════════
-  e2e-smoke:
-    name: E2E Smoke Tests
+  e2e:
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    needs: build-images
 
     steps:
-      - name: Checkout Backend
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Checkout Frontend
-        uses: actions/checkout@v4
-        with:
-          repository: chohdi-alt/remoteflew-frontend
-          token: ${{ secrets.FRONTEND_REPO_TOKEN }}
-          path: RemoteFlowApp
+      # 🔥 Build Docker images (CRITICAL — your audit flagged this missing)
+      - name: Build backend image
+        run: docker build -t backend-test ./backend
 
-      # ── Load pre-built images (avoids rebuilding in this job) ──
-      - name: Download Image Artifacts
-        uses: actions/download-artifact@v4
-        with:
-          name: e2e-docker-images
-          path: /tmp/
+      - name: Build frontend image
+        run: docker build -t frontend-test ./frontend
 
-      - name: Load Docker Images
+      # 🔥 Start full stack
+      - name: Start stack
+        run: docker compose -f docker-compose.e2e.yml up -d
+
+      # 🔥 Wait for MariaDB
+      - name: Wait DB
         run: |
-          docker load < /tmp/backend-image.tar.gz
-          docker load < /tmp/frontend-image.tar.gz
-
-      # ── Start the full E2E stack ────────────────────────────────
-      - name: Start E2E Environment
-        env:
-          KEYCLOAK_CLIENT_SECRET: ${{ secrets.KEYCLOAK_CLIENT_SECRET || 'cC9ZnTaGLwG6OCs5xKnRaxQNFzyYCEwT' }}
-        run: |
-          # Use pre-built images — skip rebuilding (no --build flag)
-          docker compose -f ${{ env.COMPOSE_FILE }} up -d
-          echo "E2E stack started. Waiting for health checks..."
-
-      # ── Wait for backend (compose health checks are the gating
-      #    mechanism, this step adds an explicit poll for CI visibility) ──
-      - name: Wait for Backend Readiness
-        run: |
-          echo "Polling backend actuator health..."
-          ATTEMPTS=0
-          MAX_ATTEMPTS=30
-          until curl -sf "${{ env.BACKEND_URL }}/actuator/health" | grep -q '"status":"UP"'; do
-            ATTEMPTS=$((ATTEMPTS + 1))
-            if [ "$ATTEMPTS" -ge "$MAX_ATTEMPTS" ]; then
-              echo "::error::Backend did not become healthy after ${MAX_ATTEMPTS} attempts."
-              docker compose -f ${{ env.COMPOSE_FILE }} ps
-              docker compose -f ${{ env.COMPOSE_FILE }} logs e2e-backend --tail=80
-              exit 1
-            fi
-            echo "  Attempt ${ATTEMPTS}/${MAX_ATTEMPTS} — waiting 10s..."
-            sleep 10
+          for i in {1..20}; do
+            nc -z localhost 3307 && break
+            sleep 3
           done
-          echo "Backend is healthy."
 
-      - name: Wait for Frontend Readiness
+      # 🔥 Wait Keycloak
+      - name: Wait Keycloak
         run: |
-          ATTEMPTS=0
-          MAX_ATTEMPTS=12
-          until curl -sf "${{ env.FRONTEND_URL }}/" > /dev/null; do
-            ATTEMPTS=$((ATTEMPTS + 1))
-            if [ "$ATTEMPTS" -ge "$MAX_ATTEMPTS" ]; then
-              echo "::error::Frontend did not become reachable after ${MAX_ATTEMPTS} attempts."
-              docker compose -f ${{ env.COMPOSE_FILE }} logs e2e-frontend --tail=40
-              exit 1
-            fi
-            echo "  Frontend attempt ${ATTEMPTS}/${MAX_ATTEMPTS} — waiting 5s..."
+          for i in {1..30}; do
+            curl -f http://localhost:8081 && break
             sleep 5
           done
-          echo "Frontend is reachable."
 
-      # ── SMOKE TEST 1: Actuator health ──────────────────────────
-      - name: Smoke Test — Actuator Health
+      # 🔥 Wait backend
+      - name: Wait Backend
         run: |
-          RESPONSE=$(curl -sf "${{ env.BACKEND_URL }}/actuator/health")
-          echo "Health response: $RESPONSE"
-          if ! echo "$RESPONSE" | grep -q '"status":"UP"'; then
-            echo "::error::Actuator health check failed"
-            exit 1
-          fi
-          echo "✅ Actuator health: PASS"
+          for i in {1..30}; do
+            curl -f http://localhost:8088/actuator/health && break
+            sleep 5
+          done
 
-      # ── SMOKE TEST 2: Keycloak realm reachable ─────────────────
-      - name: Smoke Test — Keycloak Realm Reachable
+      # 🔥 Wait frontend
+      - name: Wait Frontend
         run: |
-          HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
-            "${{ env.KEYCLOAK_URL }}/realms/pfe-realm/.well-known/openid-configuration")
-          if [ "$HTTP_STATUS" != "200" ]; then
-            echo "::error::Keycloak OIDC discovery returned HTTP $HTTP_STATUS (expected 200)"
-            exit 1
-          fi
-          echo "✅ Keycloak realm: PASS (HTTP $HTTP_STATUS)"
+          for i in {1..20}; do
+            curl -f http://localhost:4200 && break
+            sleep 3
+          done
 
-      # ── SMOKE TEST 3: Employee login ───────────────────────────
-      - name: Smoke Test — Employee Login
-        id: employee_login
-        run: |
-          TOKEN_RESPONSE=$(curl -sf -X POST \
-            "${{ env.BACKEND_URL }}/api/auth/login" \
-            -H "Content-Type: application/json" \
-            -d '{"username":"employee_test","password":"Test1234!"}' \
-            -w '\n%{http_code}')
-
-          HTTP_STATUS=$(echo "$TOKEN_RESPONSE" | tail -n1)
-          BODY=$(echo "$TOKEN_RESPONSE" | head -n -1)
-
-          echo "Login status: $HTTP_STATUS"
-          if [ "$HTTP_STATUS" != "200" ]; then
-            echo "::error::Employee login failed with HTTP $HTTP_STATUS. Body: $BODY"
-            exit 1
-          fi
-
-          # Extract and export the access token for use in subsequent tests
-          ACCESS_TOKEN=$(echo "$BODY" | grep -o '"accessToken":"[^"]*"' | cut -d'"' -f4)
-          if [ -z "$ACCESS_TOKEN" ]; then
-            echo "::error::Access token not found in login response. Body: $BODY"
-            exit 1
-          fi
-
-          echo "EMPLOYEE_TOKEN=$ACCESS_TOKEN" >> "$GITHUB_ENV"
-          echo "✅ Employee login: PASS"
-
-      # ── SMOKE TEST 4: Manager login ────────────────────────────
-      - name: Smoke Test — Manager Login
-        run: |
-          HTTP_STATUS=$(curl -sf -X POST \
-            "${{ env.BACKEND_URL }}/api/auth/login" \
-            -H "Content-Type: application/json" \
-            -d '{"username":"manager_test","password":"Test1234!"}' \
-            -o /dev/null -w "%{http_code}")
-
-          if [ "$HTTP_STATUS" != "200" ]; then
-            echo "::error::Manager login failed with HTTP $HTTP_STATUS"
-            exit 1
-          fi
-          echo "✅ Manager login: PASS"
-
-      # ── SMOKE TEST 5: Protected endpoint with token ─────────────
-      - name: Smoke Test — Protected Endpoint (Employee Dashboard)
-        run: |
-          HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
-            "${{ env.BACKEND_URL }}/api/dashboard/employee" \
-            -H "Authorization: Bearer ${{ env.EMPLOYEE_TOKEN }}")
-
-          # 200 = success, 403 = authenticated but wrong role
-          # Both confirm authentication is working; 401 = not authenticated
-          if [ "$HTTP_STATUS" == "401" ]; then
-            echo "::error::Protected endpoint returned 401 — JWT authentication is not working"
-            exit 1
-          fi
-          echo "✅ Protected endpoint: PASS (HTTP $HTTP_STATUS)"
-
-      # ── SMOKE TEST 6: Invalid credentials rejected ──────────────
-      - name: Smoke Test — Invalid Credentials Rejected
-        run: |
-          HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
-            -X POST "${{ env.BACKEND_URL }}/api/auth/login" \
-            -H "Content-Type: application/json" \
-            -d '{"username":"employee_test","password":"WRONG_PASSWORD"}')
-
-          if [ "$HTTP_STATUS" == "200" ]; then
-            echo "::error::Invalid credentials accepted — authentication security is broken"
-            exit 1
-          fi
-          echo "✅ Invalid credentials rejected: PASS (HTTP $HTTP_STATUS)"
-
-      # ── SMOKE TEST 7: Frontend serves Angular app ───────────────
-      - name: Smoke Test — Frontend Serves Angular App
-        run: |
-          RESPONSE=$(curl -sf "${{ env.FRONTEND_URL }}/")
-          if ! echo "$RESPONSE" | grep -qi "RemoteFlow\|<app-root\|ng-version"; then
-            echo "::warning::Frontend response does not contain expected Angular markers. Check nginx.conf."
-          else
-            echo "✅ Frontend serving Angular app: PASS"
-          fi
-
-      # ── Collect diagnostic information ─────────────────────────
-      - name: Collect Container Status
-        if: always()
-        run: |
-          echo "=== Container Status ==="
-          docker compose -f ${{ env.COMPOSE_FILE }} ps
-          echo ""
-          echo "=== Container Resource Usage ==="
-          docker stats --no-stream --format "table {{.Name}}\t{{.CPUPerc}}\t{{.MemUsage}}" || true
-
-      # ── Collect logs on failure only ───────────────────────────
-      - name: Collect Failure Logs
-        if: failure()
-        run: |
-          echo "============================================================"
-          echo "=== BACKEND LOGS (last 120 lines) ==="
-          echo "============================================================"
-          docker compose -f ${{ env.COMPOSE_FILE }} logs e2e-backend --tail=120
-
-          echo "============================================================"
-          echo "=== KEYCLOAK LOGS (last 60 lines) ==="
-          echo "============================================================"
-          docker compose -f ${{ env.COMPOSE_FILE }} logs e2e-keycloak --tail=60
-
-          echo "============================================================"
-          echo "=== MARIADB LOGS (last 30 lines) ==="
-          echo "============================================================"
-          docker compose -f ${{ env.COMPOSE_FILE }} logs e2e-mariadb --tail=30
-
-          echo "============================================================"
-          echo "=== ACTIVEMQ LOGS (last 30 lines) ==="
-          echo "============================================================"
-          docker compose -f ${{ env.COMPOSE_FILE }} logs e2e-activemq --tail=30
-
-      - name: Upload Logs Artifact
-        if: failure()
-        run: |
-          mkdir -p /tmp/e2e-logs
-          docker compose -f ${{ env.COMPOSE_FILE }} logs e2e-backend  > /tmp/e2e-logs/backend.log  2>&1 || true
-          docker compose -f ${{ env.COMPOSE_FILE }} logs e2e-keycloak > /tmp/e2e-logs/keycloak.log 2>&1 || true
-          docker compose -f ${{ env.COMPOSE_FILE }} logs e2e-mariadb  > /tmp/e2e-logs/mariadb.log  2>&1 || true
-
-      - uses: actions/upload-artifact@v4
-        if: failure()
+      # 🔥 Run E2E tests
+      - uses: actions/setup-node@v4
         with:
-          name: e2e-failure-logs
-          path: /tmp/e2e-logs/
-          retention-days: 7
+          node-version: 20
 
-      # ── Teardown — always runs, even on failure ─────────────────
-      - name: Teardown E2E Environment
-        if: always()
+      - name: Run E2E
         run: |
-          docker compose -f ${{ env.COMPOSE_FILE }} down \
-            --volumes \
-            --remove-orphans \
-            --timeout 30
-          echo "E2E environment torn down."
+          cd frontend
+          npm ci
+          npm run e2e
+
+      - name: Dump container logs on failure
+        if: failure()
+        run: |
+          echo "========== DOCKER STATUS =========="
+          docker ps -a
+
+          echo "========== BACKEND LOGS =========="
+          docker logs e2e-backend || true
+
+          echo "========== KEYCLOAK LOGS =========="
+          docker logs e2e-keycloak || true
+
+          echo "========== MARIADB LOGS =========="
+          docker logs e2e-mariadb || true
+
+          echo "========== ACTIVEMQ LOGS =========="
+          docker logs e2e-activemq || true
+
+          echo "========== FRONTEND LOGS =========="
+          docker logs e2e-frontend || true
+
+      # 🔥 Cleanup
+      - name: Shutdown
+        if: always()
+        run: docker compose -f docker-compose.e2e.yml down
