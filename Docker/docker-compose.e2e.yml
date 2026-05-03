@@ -91,6 +91,11 @@ services:
         condition: service_started
     networks:
       - e2e-net
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8088/actuator/health/liveness"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
 
   # ──────────────────────────────────────────────────────────────
   # 5. FRONTEND
