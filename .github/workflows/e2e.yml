@@ -37,10 +37,18 @@ jobs:
       # 🔥 Wait backend (Only required check, others handled by depends_on health)
       - name: Wait Backend
         run: |
-          for i in {1..30}; do
-            curl -f http://localhost:8088/actuator/health/liveness && exit 0
+          for i in {1..60}; do
+            echo "Waiting for backend... attempt $i"
+
+            if curl -s http://localhost:8088/actuator/health/liveness | grep -q '"status":"UP"'; then
+              echo "Backend is UP"
+              exit 0
+            fi
+
             sleep 5
           done
+
+          echo "Backend did not become ready in time"
           exit 1
 
       # 🔥 Run E2E tests
