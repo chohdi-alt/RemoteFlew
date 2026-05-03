@@ -64,7 +64,9 @@ public class SecurityConfig {
                             accessDeniedHandler.handle(request, response, accessDeniedException);
                         }))
                 .authorizeHttpRequests(auth -> auth
-                        .requestMatchers(HttpMethod.POST, "/api/auth/login", "/api/auth/refresh", "/api/auth/change-password", "/api/auth/activate")
+                        .requestMatchers("/actuator/health/**").permitAll()
+                        .requestMatchers(HttpMethod.POST, "/api/auth/login", "/api/auth/refresh",
+                                "/api/auth/change-password", "/api/auth/activate")
                         .permitAll()
                         .requestMatchers("/ws/**").permitAll()
                         .requestMatchers("/api/admin/**").hasRole("ADMIN")
@@ -176,7 +178,8 @@ public class SecurityConfig {
                 .map(role -> role == null ? "" : role.trim())
                 .filter(role -> !role.isBlank())
                 .filter(role -> !role.contains("..") && !role.contains("/") && !role.contains("\\"))
-                .map(role -> role.startsWith("ROLE_") ? role.toUpperCase(Locale.ROOT) : ("ROLE_" + role).toUpperCase(Locale.ROOT))
+                .map(role -> role.startsWith("ROLE_") ? role.toUpperCase(Locale.ROOT)
+                        : ("ROLE_" + role).toUpperCase(Locale.ROOT))
                 .distinct()
                 .map(SimpleGrantedAuthority::new)
                 .collect(Collectors.toList());
