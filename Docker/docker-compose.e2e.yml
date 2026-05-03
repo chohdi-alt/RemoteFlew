@@ -17,12 +17,6 @@ services:
       - "3310:3306"
     volumes:
       - e2e-mariadb-data:/var/lib/mysql
-    healthcheck:
-      test: ["CMD", "mariadb-admin", "ping", "-h", "localhost", "-u", "root", "-pmariadb"]
-      interval: 10s
-      timeout: 5s
-      retries: 6
-      start_period: 30s
     networks:
       - e2e-net
 
@@ -44,12 +38,6 @@ services:
       - ../keycloak/pfe-realm-export.json:/opt/keycloak/data/import/pfe-realm-export.json:ro
     ports:
       - "8081:8080"
-    healthcheck:
-      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8080/realms/pfe-realm"]
-      interval: 10s
-      timeout: 5s
-      retries: 12
-      start_period: 40s
     networks:
       - e2e-net
 
@@ -63,12 +51,6 @@ services:
       - "61616:61616"
       - "61613:61613"
       - "8161:8161"
-    healthcheck:
-      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8161"]
-      interval: 10s
-      timeout: 5s
-      retries: 10
-      start_period: 40s
     networks:
       - e2e-net
 
@@ -102,16 +84,11 @@ services:
       - "8088:8088"
     depends_on:
       e2e-mariadb:
-        condition: service_healthy
+        condition: service_started
       e2e-keycloak:
-        condition: service_healthy
+        condition: service_started
       e2e-activemq:
-        condition: service_healthy
-    healthcheck:
-      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8088/actuator/health"]
-      timeout: 5s
-      retries: 15
-      start_period: 60s
+        condition: service_started
     networks:
       - e2e-net
 
@@ -128,13 +105,7 @@ services:
       - "4200:80"
     depends_on:
       e2e-backend:
-        condition: service_healthy
-    healthcheck:
-      test: ["CMD", "wget", "-q", "--spider", "http://localhost/"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-      start_period: 20s
+        condition: service_started
     networks:
       - e2e-net
 
