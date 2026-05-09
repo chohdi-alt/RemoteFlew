@@ -360,7 +360,6 @@ public class SmtpConfigurationService {
             Integer connectionTimeoutMs,
             Integer readTimeoutMs,
             Integer writeTimeoutMs,
-            String source
-    ) {
+            String source) {
     }
 }

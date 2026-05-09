@@ -2,8 +2,8 @@ name: E2E Full System
 
 on:
   workflow_dispatch:
-  schedule:
-    - cron: "0 2 * * *"
+    #  schedule:
+    #    - cron: "0 2 * * *"
 
 jobs:
   e2e:
